@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "stock_service/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "ecosystem.config.cjs"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        run: |
+          SSH_CMD="ssh -i ~/.ssh/deploy_key ${SERVER_USER}@${SERVER_HOST}"
+          REMOTE="${SERVER_USER}@${SERVER_HOST}"
+
+          # 同步代码
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='.env.production' \
+            --exclude='.claude' \
+            --exclude='.mcp.json' \
+            ./ "${REMOTE}:${DEPLOY_DIR}/"
+
+          # 安装依赖 + 迁移 + 重启
+          $SSH_CMD "export PATH=\"\$HOME/.local/bin:\$PATH\" && \
+            export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && \
+            cd ${DEPLOY_DIR} && \
+            uv sync && \
+            uv run python scripts/migrate.py && \
+            pm2 restart ecosystem.config.cjs --update-env && \
+            pm2 reload 1guan-template 2>/dev/null || true"
