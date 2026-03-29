@@ -53,3 +53,7 @@ uv run pytest
 - `AI_API_KEY`
 - `AI_MODEL`
 - `DASHSCOPE_API_KEY`
+
+## License
+
+Released under the MIT License. See [LICENSE](./LICENSE).
