@@ -5,7 +5,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from stock_service.database import get_pool
 
 # 不需要认证的路径
-_PUBLIC_PATHS = {"/health"}
+_PUBLIC_PATHS = {"/health", "/mcp/health"}
 
 # API Key 验证缓存：key -> expire_time
 _key_cache: dict[str, float] = {}

@@ -17,12 +17,18 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Stock Service", version="0.1.0", lifespan=lifespan)
 app.add_middleware(ApiKeyMiddleware)
 
-app.mount("/mcp", mcp.sse_app())
-
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/mcp/health")
+def mcp_health():
+    return {"status": "ok"}
+
+
+app.mount("/mcp", mcp.sse_app())
 
 
 if __name__ == "__main__":

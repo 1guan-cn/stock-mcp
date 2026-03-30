@@ -36,6 +36,7 @@ uv run python -m stock_service.main
 ```
 
 默认会启动 FastAPI 应用，并在 `/mcp` 挂载 SSE MCP 服务。
+健康检查同时提供 `/mcp/health`（推荐，便于网关按 `/mcp` 前缀转发）和 `/health`（兼容旧配置）。
 
 ## 测试
 
