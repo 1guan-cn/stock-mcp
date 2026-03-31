@@ -268,7 +268,7 @@ def etf_fund_flow(
     - source: 数据口径来源说明
 
     注意：净申购/净赎回分开数据暂不支持，net_inflow 为份额变动代理估算值。
-    数据来源：AKShare fund_etf_fund_flow_hist。
+    数据来源：Tushare fund_share（ETF份额变动）。
 
     Args:
         code: ETF代码（带交易所后缀），如 "510300.SH"（沪深300ETF）、"159915.SZ"（创业板ETF）

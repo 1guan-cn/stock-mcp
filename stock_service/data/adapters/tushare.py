@@ -278,7 +278,7 @@ def get_etf_fund_flow(symbol: str, start_date: str, end_date: str) -> list[dict]
         net_inflow = round(share_change * nav, 2) if nav else None
 
         result.append({
-            "date": f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}",
+            "date": date_str,
             "share_change": share_change,
             "scale_change": scale_change,
             "net_inflow": net_inflow,
