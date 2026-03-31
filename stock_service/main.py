@@ -1,14 +1,11 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
-from starlette.routing import Route
-
 from stock_service.auth import ApiKeyMiddleware
 from stock_service.database import close_pool, init_pool
 from stock_service.mcp_server import mcp
 
 mcp_app = mcp.streamable_http_app()
-mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/")
 
 
 @asynccontextmanager
@@ -36,7 +33,7 @@ def mcp_health():
     return {"status": "ok"}
 
 
-app.router.routes.append(Route("/mcp", endpoint=mcp_route.endpoint))
+app.mount("/mcp", mcp_app)
 
 
 if __name__ == "__main__":
