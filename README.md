@@ -35,7 +35,8 @@ uv run python scripts/migrate.py
 uv run python -m stock_service.main
 ```
 
-默认会启动 FastAPI 应用，并在 `/mcp` 挂载 SSE MCP 服务。
+默认会启动 FastAPI 应用，并在 `/mcp` 提供 Streamable HTTP MCP 服务。
+MCP 客户端直接连接 `/mcp`，不再使用旧的 `/mcp/sse` 和 `/mcp/messages` 两段式端点。
 健康检查同时提供 `/mcp/health`（推荐，便于网关按 `/mcp` 前缀转发）和 `/health`（兼容旧配置）。
 
 ## 测试

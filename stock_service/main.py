@@ -1,17 +1,25 @@
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.routing import Route
 
 from stock_service.auth import ApiKeyMiddleware
 from stock_service.database import close_pool, init_pool
 from stock_service.mcp_server import mcp
 
+mcp_app = mcp.streamable_http_app()
+mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_pool()
-    yield
-    close_pool()
+    try:
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(mcp.session_manager.run())
+            yield
+    finally:
+        close_pool()
 
 
 app = FastAPI(title="Stock Service", version="0.1.0", lifespan=lifespan)
@@ -28,7 +36,7 @@ def mcp_health():
     return {"status": "ok"}
 
 
-app.mount("/mcp", mcp.sse_app())
+app.router.routes.append(Route("/mcp", endpoint=mcp_route.endpoint))
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ from stock_service.services import quote as quote_service
 
 mcp = FastMCP(
     "stock-service",
+    streamable_http_path="/",
+    stateless_http=True,
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", "1guan.cn", "www.1guan.cn"],
@@ -421,4 +423,4 @@ def get_margin_detail(
 
 if __name__ == "__main__":
     init_pool()
-    mcp.run(transport="sse")
+    mcp.run(transport="streamable-http")
