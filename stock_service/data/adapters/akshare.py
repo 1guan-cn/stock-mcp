@@ -42,6 +42,91 @@ def _safe_num(val: object) -> float | None:
         return None
 
 
+def _tencent_market_prefix(code: str, asset_type: str = "stock") -> str:
+    """腾讯财经 market prefix: 沪市=sh, 深市=sz, 港股=hk, 美股=us。"""
+    if asset_type == "hk":
+        return "hk"
+    if asset_type == "us":
+        return "us"
+    if asset_type == "global_index":
+        # 腾讯不支持全球指数，返回空让调用方 fallback
+        return ""
+    if code.startswith(("6", "5")):
+        return "sh"
+    if asset_type == "index":
+        return "sh" if code.startswith(("000", "9")) else "sz"
+    return "sz"
+
+
+def _fetch_bid_ask_tencent(code: str, asset_type: str = "stock") -> dict | None:
+    """调用腾讯财经行情 API，返回与东方财富相同格式的标准化 dict。
+
+    腾讯接口返回固定位置的逗号分隔字符串，字段含义参考:
+    https://blog.csdn.net/luanpeng825485697/article/details/78442062
+    主要字段位置 (0-based):
+      1:名称 3:现价 4:昨收 5:今开 6:成交量(手) 7:外盘 8:内盘
+      9-28:五档买卖盘  30:涨跌 31:涨幅% 33:最高 34:最低
+      36:成交额(万) 37:成交量(手) 38:换手率%
+    """
+    prefix = _tencent_market_prefix(code, asset_type)
+    if not prefix:
+        return None
+    symbol = f"{prefix}{code}"
+    url = f"http://qt.gtimg.cn/q={symbol}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://finance.qq.com/",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        text = r.text
+        # 解析 v_xxNNNNNN="..."
+        start = text.find('"')
+        end = text.rfind('"')
+        if start == -1 or end <= start:
+            return None
+        fields = text[start + 1 : end].split("~")
+        if len(fields) < 50 or not fields[3]:
+            return None
+
+        def _p(idx: int) -> float | None:
+            try:
+                v = float(fields[idx])
+                return v if v != 0 else None
+            except (ValueError, IndexError):
+                return None
+
+        return {
+            # 腾讯: [9-18] 卖五→卖一(价格递减), [19-28] 买一→买五
+            "sell_5": _p(9), "sell_5_vol": _p(10),
+            "sell_4": _p(11), "sell_4_vol": _p(12),
+            "sell_3": _p(13), "sell_3_vol": _p(14),
+            "sell_2": _p(15), "sell_2_vol": _p(16),
+            "sell_1": _p(17), "sell_1_vol": _p(18),
+            "buy_1": _p(19), "buy_1_vol": _p(20),
+            "buy_2": _p(21), "buy_2_vol": _p(22),
+            "buy_3": _p(23), "buy_3_vol": _p(24),
+            "buy_4": _p(25), "buy_4_vol": _p(26),
+            "buy_5": _p(27), "buy_5_vol": _p(28),
+            "最新": _p(3),
+            "最高": _p(33),
+            "最低": _p(34),
+            "今开": _p(5),
+            "总手": _p(36),
+            "金额": _p(37) * 10000 if _p(37) is not None else None,
+            "量比": _p(49),
+            "昨收": _p(4),
+            "换手": _p(38),
+            "涨跌": _p(31),
+            "涨幅": _p(32),
+            "name": fields[1] if len(fields) > 1 else None,
+        }
+    except Exception as e:
+        logger.warning("_fetch_bid_ask_tencent(%s) failed: %s", code, e)
+        return None
+
+
 def _fetch_bid_ask_em(code: str, asset_type: str = "stock") -> dict | None:
     """直接调用东方财富行情 API，返回标准化 dict。"""
     market_code = _eastmoney_market_code(code, asset_type)
@@ -252,11 +337,17 @@ def get_commodity_price(commodity_code: str) -> list[dict]:
 def get_realtime_quote(code: str, asset_type: str) -> dict | None:
     """获取单只股票/ETF/指数的实时行情 + 五档盘口。
 
+    数据源优先级: 腾讯财经 → 东方财富（fallback）。
+    腾讯不支持全球指数，此时直接走东方财富。
+
     Args:
-        code: 纯数字代码，如 "000001"
-        asset_type: "stock" / "fund" / "index"
+        code: 纯数字代码，如 "000001"；美股为 ticker 如 "AAPL"
+        asset_type: "stock" / "fund" / "index" / "hk" / "us" / "global_index"
     """
-    data = _fetch_bid_ask_em(code, asset_type)
+    data = _fetch_bid_ask_tencent(code, asset_type)
+    if data is None:
+        logger.debug("腾讯源失败，fallback 到东方财富: %s", code)
+        data = _fetch_bid_ask_em(code, asset_type)
     if data is None:
         return None
 
