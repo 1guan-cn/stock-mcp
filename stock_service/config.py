@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     )
 
     tushare_token: str
+    tushare_base_url: str = ""
     database_url: str
     host: str = "0.0.0.0"
     port: int = 8000

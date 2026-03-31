@@ -21,7 +21,10 @@ def _clean_nan(records: list[dict]) -> list[dict]:
 
 @lru_cache(maxsize=1)
 def _api():
-    return ts.pro_api(settings.tushare_token)
+    pro = ts.pro_api(settings.tushare_token)
+    if settings.tushare_base_url:
+        pro._DataApi__http_url = settings.tushare_base_url
+    return pro
 
 
 # ── 股票日线 ──
@@ -226,6 +229,63 @@ def get_index_list() -> list[IndexInfo]:
         )
         for row in _clean_nan(combined.to_dict("records"))
     ]
+
+
+# ── ETF 份额变动 ──
+
+def get_etf_fund_flow(symbol: str, start_date: str, end_date: str) -> list[dict]:
+    """获取 ETF 份额变动数据（etf_share_size 差分）。
+
+    通过 etf_share_size 获取每日份额（万份）、规模（万元）、净值，
+    相邻日期差分得到份额变动和规模变动，净流入 = 份额变动 × 净值。
+
+    Args:
+        symbol: TS 代码，如 "510300.SH"
+        start_date: 起始日期 YYYYMMDD
+        end_date: 结束日期 YYYYMMDD
+    """
+    df = _api().etf_share_size(
+        ts_code=symbol, start_date=start_date, end_date=end_date,
+        fields="trade_date,ts_code,total_share,total_size,nav,close",
+    )
+    if df is None or df.empty:
+        return []
+
+    records = sorted(_clean_nan(df.to_dict("records")), key=lambda r: r["trade_date"])
+
+    result: list[dict] = []
+    for i in range(1, len(records)):
+        curr = records[i]
+        prev = records[i - 1]
+
+        date_str = curr["trade_date"]
+        share_curr = curr.get("total_share")  # 万份
+        share_prev = prev.get("total_share")
+        if share_curr is None or share_prev is None:
+            continue
+
+        share_change = round(share_curr - share_prev, 2)  # 万份
+
+        # 规模变动：万元 → 亿元
+        size_curr = curr.get("total_size")
+        size_prev = prev.get("total_size")
+        scale_change = None
+        if size_curr is not None and size_prev is not None:
+            scale_change = round((size_curr - size_prev) / 10000, 4)  # 亿元
+
+        # 净流入 = 份额变动 × 净值（万元）
+        nav = curr.get("nav")
+        net_inflow = round(share_change * nav, 2) if nav else None
+
+        result.append({
+            "date": f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}",
+            "share_change": share_change,
+            "scale_change": scale_change,
+            "net_inflow": net_inflow,
+            "source": "tushare:etf_share_size",
+        })
+
+    return result
 
 
 # ── 财务数据 ──

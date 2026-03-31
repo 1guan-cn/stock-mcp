@@ -140,19 +140,16 @@ def get_fund_flow(symbol: str) -> list[dict]:
 def get_etf_fund_flow(symbol: str) -> list[dict]:
     """获取ETF申购赎回份额变动数据（增量缓存）。仅 ETF/基金有效。"""
     try:
-        ak_params = _symbol_to_akshare(symbol)
-        if not ak_params:
-            return []
-        code, _ = ak_params
-
         today = today_str()
         start_date = n_days_ago_str(30)
+        # 多取 15 天用于差分计算首日份额变动
+        fetch_start = n_days_ago_str(45)
 
         coverage = quote_store.get_coverage(symbol, DataType.ETF_SUBSCRIPTION)
         missing = calc_missing_ranges(start_date, today, coverage)
 
         if missing:
-            raw = ak.get_etf_fund_flow(code)
+            raw = ts.get_etf_fund_flow(symbol, fetch_start, today)
             if raw:
                 factor_store.save_etf_subscription(symbol, raw)
                 dates = [r["date"] for r in raw]
