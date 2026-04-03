@@ -5,6 +5,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from stock_service.database import init_pool
 from stock_service.models import AdjustType, DetailLevel, FinanceReportType
+from stock_service.data.adapters.tushare import is_trade_date
 from stock_service.services import factor as factor_service
 from stock_service.services import finance as finance_service
 from stock_service.services import listing as listing_service
@@ -419,6 +420,17 @@ def get_margin_detail(
     """
     result = margin_service.get_margin(code, date, n_days)
     return _to_json(result)
+
+
+@mcp.tool()
+def check_trade_date(date: str) -> str:
+    """判断指定日期是否为 A 股交易日。
+
+    Args:
+        date: 日期，YYYYMMDD 格式，如 "20240101"
+    """
+    result = is_trade_date(date)
+    return json.dumps({"date": date, "is_trade_date": result})
 
 
 if __name__ == "__main__":

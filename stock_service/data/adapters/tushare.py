@@ -288,6 +288,20 @@ def get_etf_fund_flow(symbol: str, start_date: str, end_date: str) -> list[dict]
     return result
 
 
+# ── 交易日历 ──
+
+def is_trade_date(date: str) -> bool:
+    """判断指定日期是否为 A 股交易日。
+
+    Args:
+        date: 日期，YYYYMMDD 格式
+    """
+    df = _api().trade_cal(exchange="SSE", start_date=date, end_date=date)
+    if df is None or df.empty:
+        return False
+    return bool(df.iloc[0]["is_open"] == 1)
+
+
 # ── 财务数据 ──
 
 _FINANCE_API_MAP = {
