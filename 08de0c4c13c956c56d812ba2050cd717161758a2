@@ -1,0 +1,25 @@
+stock_service/data/_cache.py
+  808289bc7199fb0b 29-33,43-44
+stock_service/data/adapters/tushare.py
+  808289bc7199fb0b 22-33,61,66,109,134,162,176-180,270-273,348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "08de0c4c13c956c56d812ba2050cd717161758a2",
+  "prompts": {
+    "808289bc7199fb0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ebe70195-68aa-499a-a8cb-bec721c7b7fb",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Harry Liu",
+      "messages": [],
+      "total_additions": 34,
+      "total_deletions": 9,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
