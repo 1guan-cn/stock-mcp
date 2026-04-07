@@ -19,6 +19,18 @@ def _clean_nan(records: list[dict]) -> list[dict]:
     return records
 
 
+def _norm_date(value):
+    """标准化 Tushare trade_date 为 YYYYMMDD。
+
+    Tushare 大多数接口返回 YYYYMMDD，但部分基金接口（如 fund_daily 对
+    某些 ETF）返回 YYYY-MM-DD。统一在 adapter 出口剥离分隔符，避免污染
+    下游 DB / cache 层（_cache.calc_missing_ranges 用 strptime('%Y%m%d')）。
+    """
+    if value is None:
+        return value
+    return str(value).replace("-", "")
+
+
 @lru_cache(maxsize=1)
 def _api():
     pro = ts.pro_api(settings.tushare_token)
@@ -46,12 +58,12 @@ def get_stock_daily(symbol: str, start_date: str, end_date: str) -> list[DailyBa
     basic_map: dict[str, dict] = {}
     if df_basic is not None and not df_basic.empty:
         basic_map = {
-            row["trade_date"]: row for row in df_basic.to_dict("records")
+            _norm_date(row["trade_date"]): row for row in df_basic.to_dict("records")
         }
 
     bars: list[DailyBar] = []
     for row in df_daily.to_dict("records"):
-        trade_date = row["trade_date"]
+        trade_date = _norm_date(row["trade_date"])
         basic = basic_map.get(trade_date, {})
         bars.append(
             DailyBar(
@@ -94,7 +106,7 @@ def get_fund_daily(symbol: str, start_date: str, end_date: str) -> list[DailyBar
         return []
     bars = [
         DailyBar(
-            date=row["trade_date"],
+            date=_norm_date(row["trade_date"]),
             open=row["open"],
             high=row["high"],
             low=row["low"],
@@ -119,7 +131,7 @@ def get_index_daily(symbol: str, start_date: str, end_date: str) -> list[DailyBa
         return []
     bars = [
         DailyBar(
-            date=row["trade_date"],
+            date=_norm_date(row["trade_date"]),
             open=row["open"],
             high=row["high"],
             low=row["low"],
@@ -147,7 +159,7 @@ def get_adj_factor(
         df = _api().adj_factor(ts_code=symbol, start_date=start_date, end_date=end_date)
     if df is None or df.empty:
         return {}
-    return {row["trade_date"]: row["adj_factor"] for row in df.to_dict("records")}
+    return {_norm_date(row["trade_date"]): row["adj_factor"] for row in df.to_dict("records")}
 
 
 # ── 指数估值 ──
@@ -161,7 +173,11 @@ def get_index_valuation(symbol: str, start_date: str, end_date: str) -> list[dic
     )
     if df is None or df.empty:
         return []
-    return _clean_nan(df.to_dict("records"))
+    records = _clean_nan(df.to_dict("records"))
+    for row in records:
+        if "trade_date" in row:
+            row["trade_date"] = _norm_date(row["trade_date"])
+    return records
 
 
 # ── 列表 ──
@@ -251,7 +267,10 @@ def get_etf_fund_flow(symbol: str, start_date: str, end_date: str) -> list[dict]
     if df is None or df.empty:
         return []
 
-    records = sorted(_clean_nan(df.to_dict("records")), key=lambda r: r["trade_date"])
+    records = _clean_nan(df.to_dict("records"))
+    for row in records:
+        row["trade_date"] = _norm_date(row.get("trade_date"))
+    records.sort(key=lambda r: r["trade_date"])
 
     result: list[dict] = []
     for i in range(1, len(records)):
@@ -326,7 +345,7 @@ def get_margin(symbol: str, start_date: str, end_date: str) -> list[dict]:
         return []
     records = [
         {
-            "date": row["trade_date"],
+            "date": _norm_date(row["trade_date"]),
             "rzye": row.get("rzye"),
             "rzmre": row.get("rzmre"),
             "rzche": row.get("rzche"),

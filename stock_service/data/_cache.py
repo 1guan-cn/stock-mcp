@@ -26,6 +26,11 @@ def is_today(date_str: str) -> bool:
     return date_str == today_str()
 
 
+def _norm_date(value: str) -> str:
+    """容错处理历史数据中可能存在的 'YYYY-MM-DD' 格式。"""
+    return value.replace("-", "") if value else value
+
+
 def calc_missing_ranges(
     start_date: str,
     end_date: str,
@@ -35,7 +40,8 @@ def calc_missing_ranges(
     if coverage is None:
         return [(start_date, end_date)]
 
-    cached_min, cached_max = coverage
+    cached_min = _norm_date(coverage[0])
+    cached_max = _norm_date(coverage[1])
     ranges: list[tuple[str, str]] = []
 
     if start_date < cached_min:
