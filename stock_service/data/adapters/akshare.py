@@ -189,41 +189,6 @@ def _normalize_date(date_val: object) -> str | None:
     return str(date_val).replace("-", "")
 
 
-def get_fund_flow(code: str, market: str = "sh") -> list[dict]:
-    """获取个股/ETF 资金流，返回标准化 dict 列表。
-
-    Args:
-        code: 纯数字代码，如 "510300"
-        market: "sh" 或 "sz"
-    """
-    try:
-        import akshare as ak
-
-        df = ak.stock_individual_fund_flow(stock=code, market=market)
-        if df is None or df.empty:
-            return []
-
-        normalized = []
-        for r in df.to_dict("records"):
-            date_str = _normalize_date(r.get("日期"))
-            if date_str is None:
-                continue
-            main_net = _nan_to_none(r.get("主力净流入-净额"))
-            if main_net is None:
-                continue
-            normalized.append({
-                "date": date_str,
-                "main_force_net": main_net,
-                "main_force_ratio": _nan_to_none(r.get("主力净流入-净占比")),
-                "super_large_net": _nan_to_none(r.get("超大单净流入-净额")),
-                "large_net": _nan_to_none(r.get("大单净流入-净额")),
-            })
-        return normalized
-    except Exception as e:
-        logger.warning("AKShare get_fund_flow(%s) failed: %s", code, e)
-        return []
-
-
 def get_etf_fund_flow(code: str) -> list[dict]:
     """获取ETF份额变动历史（申购赎回代理数据）。
 

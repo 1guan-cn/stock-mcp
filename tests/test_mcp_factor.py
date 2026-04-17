@@ -81,6 +81,13 @@ def test_main_force_flow_index():
     assert data.get("unsupported_reason") is not None
 
 
+def test_main_force_flow_etf():
+    """ETF 在 A 股市场无主力资金口径，应显式返回 unsupported。"""
+    data = json.loads(etf_main_force_flow("510300.SH"))
+    assert data.get("unsupported_reason") == "etf_no_main_force_data"
+    assert data.get("main_force") is None
+
+
 # ── index_valuation_percentile ──
 
 def test_index_valuation():

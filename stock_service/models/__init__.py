@@ -36,6 +36,7 @@ class DataType(StrEnum):
 class UnsupportedReason(StrEnum):
     NOT_ETF = "not_etf"
     INDEX_NOT_SUPPORTED = "index_not_supported"
+    ETF_NO_MAIN_FORCE_DATA = "etf_no_main_force_data"
 
 
 class FinanceReportType(StrEnum):

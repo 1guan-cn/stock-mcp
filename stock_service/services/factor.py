@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from stock_service.data import factor as factor_data
 from stock_service.data import listing as listing_data
-from stock_service.services._utils import today_str
+from stock_service.services._utils import stale_days, today_str
 from stock_service.models import AssetType, UnsupportedReason
 from stock_service.models.factor import (
     CommodityPercentileData,
@@ -27,8 +27,8 @@ _MAX_WORKERS = 8
 
 
 def _build_fund_flow(symbol: str, asset_type: str) -> FundFlowData | None:
-    """从 data 层获取资金流并组装。"""
-    if asset_type == AssetType.INDEX:
+    """从 data 层获取资金流并组装。仅 A 股个股有主力资金数据。"""
+    if asset_type != AssetType.STOCK:
         return None
 
     try:
@@ -39,6 +39,7 @@ def _build_fund_flow(symbol: str, asset_type: str) -> FundFlowData | None:
         latest = rows[-1]
         recent_5d = rows[-5:]
         recent_5d_main = sum(r.get("main_force_net", 0) or 0 for r in recent_5d)
+        data_date = latest.get("date")
 
         return FundFlowData(
             main_force_net=latest.get("main_force_net"),
@@ -46,6 +47,8 @@ def _build_fund_flow(symbol: str, asset_type: str) -> FundFlowData | None:
             super_large_net=latest.get("super_large_net"),
             large_net=latest.get("large_net"),
             recent_5d_main_force=round(recent_5d_main, 2),
+            data_as_of=data_date,
+            stale_days=stale_days(data_date),
         )
     except Exception as e:
         logger.warning("_build_fund_flow(%s) failed: %s", symbol, e)
@@ -62,10 +65,13 @@ def _build_northbound() -> NorthboundData | None:
         latest = rows[-1]
         recent_5d = rows[-5:]
         net_5d = sum(r.get("north_net_buy", 0) or 0 for r in recent_5d)
+        data_date = latest.get("date")
 
         return NorthboundData(
             north_net_buy=latest.get("north_net_buy"),
             north_net_buy_5d=round(net_5d, 2),
+            data_as_of=data_date,
+            stale_days=stale_days(data_date),
         )
     except Exception as e:
         logger.warning("_build_northbound failed: %s", e)
@@ -148,14 +154,17 @@ def get_etf_fund_flow(code: str, date: str | None = None) -> EtfFundFlowItem:
 
     recent_5d_inflow = round(sum(r.get("net_inflow") or 0 for r in recent_5d), 2)
 
+    data_date = latest["date"]
     flow = EtfFundFlowData(
         net_inflow=latest.get("net_inflow"),
         share_change=latest.get("share_change"),
         scale_change=latest.get("scale_change"),
         recent_5d_inflow=recent_5d_inflow,
         source=latest.get("source"),
+        data_as_of=data_date,
+        stale_days=stale_days(data_date, date),
     )
-    return EtfFundFlowItem(symbol=symbol, name=name, as_of=latest["date"], fund_flow=flow)
+    return EtfFundFlowItem(symbol=symbol, name=name, as_of=data_date, fund_flow=flow)
 
 
 # ── P1: 主力资金结构 ──
@@ -169,11 +178,18 @@ def get_etf_main_force_flow(code: str, date: str | None = None) -> MainForceFlow
     symbol, name, asset_type = symbols[0]
     asset = AssetType(asset_type)
 
-    # 指数无主力资金数据，直接返回空结果
+    # 指数无主力资金数据
     if asset == AssetType.INDEX:
         return MainForceFlowItem(
             symbol=symbol, name=name, as_of=date or today_str(),
             unsupported_reason=UnsupportedReason.INDEX_NOT_SUPPORTED,
+        )
+
+    # ETF 的"主力资金"在 A 股市场无干净数据源（做市商撮合不适用大单分类）
+    if asset == AssetType.FUND:
+        return MainForceFlowItem(
+            symbol=symbol, name=name, as_of=date or today_str(),
+            unsupported_reason=UnsupportedReason.ETF_NO_MAIN_FORCE_DATA,
         )
 
     try:
@@ -194,13 +210,16 @@ def get_etf_main_force_flow(code: str, date: str | None = None) -> MainForceFlow
     else:
         latest = rows[-1]
 
+    data_date = latest["date"]
     flow = MainForceFlowData(
         large_order_net=latest.get("large_net"),
         super_large_net=latest.get("super_large_net"),
         main_force_net=latest.get("main_force_net"),
         main_force_ratio=latest.get("main_force_ratio"),
+        data_as_of=data_date,
+        stale_days=stale_days(data_date, date),
     )
-    return MainForceFlowItem(symbol=symbol, name=name, as_of=latest["date"], main_force=flow)
+    return MainForceFlowItem(symbol=symbol, name=name, as_of=data_date, main_force=flow)
 
 
 # ── P2: 指数估值分位 ──

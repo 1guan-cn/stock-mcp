@@ -247,6 +247,50 @@ def get_index_list() -> list[IndexInfo]:
     ]
 
 
+# ── 个股主力资金流 ──
+
+def get_fund_flow(symbol: str, start_date: str, end_date: str) -> list[dict]:
+    """获取个股主力资金流（Tushare moneyflow，仅 A 股个股）。
+
+    字段单位对齐原 AKShare 东财口径：
+      - main_force_net / super_large_net / large_net: 元
+      - main_force_ratio: 百分比（12.5 代表 12.5%）
+
+    Args:
+        symbol: TS 代码，如 "000001.SZ"
+        start_date: 起始日期 YYYYMMDD
+        end_date: 结束日期 YYYYMMDD
+    """
+    df = _api().moneyflow(ts_code=symbol, start_date=start_date, end_date=end_date)
+    if df is None or df.empty:
+        return []
+
+    records = _clean_nan(df.to_dict("records"))
+    result: list[dict] = []
+    for row in records:
+        trade_date = _norm_date(row.get("trade_date"))
+        if trade_date is None:
+            continue
+        elg_net_wan = (row.get("buy_elg_amount") or 0) - (row.get("sell_elg_amount") or 0)
+        lg_net_wan = (row.get("buy_lg_amount") or 0) - (row.get("sell_lg_amount") or 0)
+        main_net_wan = elg_net_wan + lg_net_wan
+        # 单边买入金额合计作为当日成交额近似（万元）
+        total_buy_wan = sum(
+            (row.get(f) or 0)
+            for f in ("buy_sm_amount", "buy_md_amount", "buy_lg_amount", "buy_elg_amount")
+        )
+        ratio = round(main_net_wan / total_buy_wan * 100, 2) if total_buy_wan else None
+        result.append({
+            "date": trade_date,
+            "main_force_net": round(main_net_wan * 10000, 2),
+            "main_force_ratio": ratio,
+            "super_large_net": round(elg_net_wan * 10000, 2),
+            "large_net": round(lg_net_wan * 10000, 2),
+        })
+    result.sort(key=lambda r: r["date"])
+    return result
+
+
 # ── ETF 份额变动 ──
 
 def get_etf_fund_flow(symbol: str, start_date: str, end_date: str) -> list[dict]:

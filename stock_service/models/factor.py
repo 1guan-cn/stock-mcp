@@ -15,11 +15,15 @@ class FundFlowData(BaseModel):
     super_large_net: float | None = None
     large_net: float | None = None
     recent_5d_main_force: float | None = None
+    data_as_of: str | None = None          # 数据真实日期（YYYYMMDD），可能早于顶层 as_of
+    stale_days: int | None = None          # 自然日差：今天 - data_as_of；>1 视为陈旧
 
 
 class NorthboundData(BaseModel):
     north_net_buy: float | None = None
     north_net_buy_5d: float | None = None
+    data_as_of: str | None = None
+    stale_days: int | None = None
 
 
 class FactorItem(BaseModel):
@@ -47,6 +51,8 @@ class EtfFundFlowData(BaseModel):
     scale_change: float | None = None       # 规模变动（亿元）
     recent_5d_inflow: float | None = None   # 近5日累计净流入（万元）
     source: str | None = None              # 数据口径来源
+    data_as_of: str | None = None          # 数据真实日期（YYYYMMDD）
+    stale_days: int | None = None          # 自然日差：今天 - data_as_of
 
 
 class EtfFundFlowItem(BaseModel):
@@ -64,6 +70,8 @@ class MainForceFlowData(BaseModel):
     super_large_net: float | None = None    # 超大单净流入（万元）
     main_force_net: float | None = None     # 主力净流入（大单+超大单）（万元）
     main_force_ratio: float | None = None   # 主力净流入占成交额比例
+    data_as_of: str | None = None           # 数据真实日期（YYYYMMDD）
+    stale_days: int | None = None           # 自然日差：今天 - data_as_of
 
 
 class MainForceFlowItem(BaseModel):

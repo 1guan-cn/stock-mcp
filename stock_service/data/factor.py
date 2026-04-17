@@ -91,25 +91,15 @@ def get_valuation(symbol: str, asset_type: str) -> ValuationData | None:
 
 # ── 资金流 ──
 
-def _symbol_to_akshare(symbol: str) -> tuple[str, str] | None:
-    """将 symbol（如 510300.SH）转为 AKShare 需要的 (code, market)。"""
-    parts = symbol.split(".")
-    if len(parts) != 2:
-        return None
-    code, exchange = parts
-    if exchange in ("SH", "SZ"):
-        return code, exchange.lower()
-    return None
-
-
 def get_fund_flow(symbol: str) -> list[dict]:
-    """获取资金流数据（增量缓存）。仅股票和 ETF 有资金流。"""
-    try:
-        ak_params = _symbol_to_akshare(symbol)
-        if not ak_params:
-            return []
-        code, market = ak_params
+    """获取个股主力资金流（Tushare moneyflow，仅 A 股个股）。
 
+    ETF / 指数的"主力资金"口径在 A 股市场并无干净数据源（做市商撮合
+    不适用大单分类），因此不在本层取数；调用方应在 service 层守门。
+    """
+    if not symbol.endswith((".SH", ".SZ")):
+        return []
+    try:
         today = today_str()
         start_date = n_days_ago_str(30)
 
@@ -117,7 +107,7 @@ def get_fund_flow(symbol: str) -> list[dict]:
         missing = calc_missing_ranges(start_date, today, coverage)
 
         if missing:
-            raw = ak.get_fund_flow(code, market)
+            raw = ts.get_fund_flow(symbol, start_date, today)
             if raw:
                 factor_store.save_fund_flow(symbol, raw)
                 dates = [r["date"] for r in raw]

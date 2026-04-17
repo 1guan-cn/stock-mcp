@@ -226,7 +226,10 @@ def get_factor(
     - fund_flow: 主力净流入（净额/占比）、超大单/大单净流入、近5日累计
     - northbound: 北向资金当日净买入、近5日累计
 
-    ETF 估值通过跟踪指数映射获取。指数无资金流数据。
+    覆盖说明：
+    - 主力资金（fund_flow）**仅 A 股个股**有数据，ETF / 指数固定返回 null
+    - 顶层 as_of = 调用意图日期；子结构的 data_as_of = 实际数据日期
+    - 子结构携带 stale_days（自然日），>1 通常意味着上游数据陈旧
 
     Args:
         code: 证券代码（带交易所后缀），如 "510300.SH"（沪深300ETF）、"000001.SZ"（平安银行）、"000300.SH"（沪深300指数）
@@ -267,6 +270,8 @@ def etf_fund_flow(
     - scale_change: 规模变动（亿元）
     - recent_5d_inflow: 近5日累计净流入（万元）
     - source: 数据口径来源说明
+    - data_as_of: 实际数据日期（YYYYMMDD）
+    - stale_days: 与调用日的自然日差；部分 ETF 上游披露有延迟，>1 请谨慎使用
 
     注意：净申购/净赎回分开数据暂不支持，net_inflow 为份额变动代理估算值。
     数据来源：Tushare fund_share（ETF份额变动）。
@@ -284,19 +289,24 @@ def etf_main_force_flow(
     code: str,
     date: str | None = None,
 ) -> str:
-    """查询ETF/股票主力资金结构数据（I因子）。
+    """查询股票主力资金结构数据（I因子）。
 
     返回主力资金构成：
-    - large_order_net: 大单净流入（万元）
-    - super_large_net: 超大单净流入（万元）
-    - main_force_net: 主力净流入 = 大单 + 超大单（万元）
-    - main_force_ratio: 主力净流入占当日成交额比例
+    - large_order_net: 大单净流入（元）
+    - super_large_net: 超大单净流入（元）
+    - main_force_net: 主力净流入 = 大单 + 超大单（元）
+    - main_force_ratio: 主力净流入占当日成交额比例（百分比）
+    - data_as_of: 实际数据日期（YYYYMMDD）
+    - stale_days: 与调用日的自然日差；>1 通常意味着上游数据陈旧
 
-    数据来源：AKShare stock_individual_fund_flow（东方财富）。
-    指数无此数据。
+    覆盖范围：
+    - **仅 A 股个股** 提供主力资金数据（数据源：Tushare moneyflow）
+    - ETF 固定返回 unsupported_reason=etf_no_main_force_data
+      （做市商撮合不适用大单分类，A 股市场无 ETF 主力资金口径）
+    - 指数固定返回 unsupported_reason=index_not_supported
 
     Args:
-        code: 证券代码（带交易所后缀），如 "510300.SH"（沪深300ETF）、"000001.SZ"（平安银行）
+        code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）
         date: 可选，指定日期 YYYYMMDD 格式。不传则返回最新一日数据
     """
     result = factor_service.get_etf_main_force_flow(code, date)
