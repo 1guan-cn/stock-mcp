@@ -1,0 +1,39 @@
+stock_service/mcp_server.py
+  ad7def48f2a63a89 229-232,273-274,292,295-306,309
+tests/test_stale_days.py
+  ad7def48f2a63a89 1-30
+stock_service/services/factor.py
+  ad7def48f2a63a89 8,30-31,42,50-51,68,73-74,157,164-165,167,181,188-194,213,219-220,222
+tests/test_mcp_factor.py
+  ad7def48f2a63a89 84-90
+stock_service/models/factor.py
+  ad7def48f2a63a89 18-19,25-26,54-55,73-74
+stock_service/data/adapters/tushare.py
+  ad7def48f2a63a89 250-293
+stock_service/data/factor.py
+  ad7def48f2a63a89 95,97-102,110
+stock_service/models/__init__.py
+  ad7def48f2a63a89 39
+stock_service/services/_utils.py
+  ad7def48f2a63a89 17-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "3489c387f23eaaf9615d32ea2be237562dd33062",
+  "prompts": {
+    "ad7def48f2a63a89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f59f8d0-bbcf-4d8d-a0c0-d3cac961e2bd",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Harry Liu",
+      "messages": [],
+      "total_additions": 158,
+      "total_deletions": 68,
+      "accepted_lines": 158,
+      "overriden_lines": 0
+    }
+  }
+}
