@@ -139,20 +139,39 @@ def get_etf_fund_flow(code: str, date: str | None = None) -> EtfFundFlowItem:
         return EtfFundFlowItem(symbol=symbol, name=name, as_of=date or today_str())
 
     if date:
-        # 取 <= date 的最近一条记录；若不存在则返回空 fund_flow 且 as_of=date
-        eligible = [r for r in rows if r.get("date") and r["date"] <= date]
+        # 选 <= date 且 net_inflow 非 null 的最近一条；rollback 终点必须是有 NAV 的日，
+        # 否则下游会拿到 net_inflow=null 又得自行回溯（违反 provider/consumer 分层）。
+        eligible = [
+            r for r in rows
+            if r.get("date") and r["date"] <= date and r.get("net_inflow") is not None
+        ]
         if not eligible:
             return EtfFundFlowItem(symbol=symbol, name=name, as_of=date)
-        idx = rows.index(eligible[-1])
         latest = eligible[-1]
+        idx = rows.index(latest)
         start_idx = max(0, idx - 4)
         recent_5d = rows[start_idx : idx + 1]
     else:
-        latest = rows[-1]
-        start_idx = max(0, len(rows) - 5)
-        recent_5d = rows[start_idx:]
+        eligible = [r for r in rows if r.get("net_inflow") is not None]
+        if not eligible:
+            return EtfFundFlowItem(symbol=symbol, name=name, as_of=today_str())
+        latest = eligible[-1]
+        idx = rows.index(latest)
+        start_idx = max(0, idx - 4)
+        recent_5d = rows[start_idx : idx + 1]
 
-    recent_5d_inflow = round(sum(r.get("net_inflow") or 0 for r in recent_5d), 2)
+    # 老字段 recent_5d_inflow（deprecated）：去掉 `or 0` silent fallback；任一日 null → 整体 null
+    _inflow_vals = [r.get("net_inflow") for r in recent_5d]
+    recent_5d_inflow = (
+        round(sum(_inflow_vals), 2)
+        if all(v is not None for v in _inflow_vals)
+        else None
+    )
+    # 新字段 recent_5d_inflow_series：暴露每日 (date, net_inflow)，由消费者自决聚合
+    recent_5d_inflow_series = [
+        {"date": r["date"], "net_inflow": r.get("net_inflow")}
+        for r in recent_5d
+    ]
 
     data_date = latest["date"]
     flow = EtfFundFlowData(
@@ -160,6 +179,7 @@ def get_etf_fund_flow(code: str, date: str | None = None) -> EtfFundFlowItem:
         share_change=latest.get("share_change"),
         scale_change=latest.get("scale_change"),
         recent_5d_inflow=recent_5d_inflow,
+        recent_5d_inflow_series=recent_5d_inflow_series,
         source=latest.get("source"),
         data_as_of=data_date,
         stale_days=stale_days(data_date, date),

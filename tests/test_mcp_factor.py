@@ -49,19 +49,44 @@ def test_factor_batch():
 # ── etf_fund_flow ──
 
 def test_etf_fund_flow_ok():
-    """ETF 申购赎回数据。"""
+    """ETF 申购赎回数据 — schema 稳定契约：所有子字段始终存在（值可为 null）。"""
     data = json.loads(etf_fund_flow("510300.SH"))
     for key in ("symbol", "name", "as_of"):
         assert key in data
-    # fund_flow 可能有值也可能为 None（数据源未更新）
     if data.get("fund_flow"):
-        assert "net_inflow" in data["fund_flow"] or "share_change" in data["fund_flow"]
+        # 契约：8 个子字段必须全部存在（含 deprecated 老字段 + 新 series 字段）
+        for key in (
+            "net_inflow", "share_change", "scale_change",
+            "recent_5d_inflow", "recent_5d_inflow_series",
+            "source", "data_as_of", "stale_days",
+        ):
+            assert key in data["fund_flow"], f"missing key: {key}"
+        series = data["fund_flow"]["recent_5d_inflow_series"]
+        if series is not None:
+            assert isinstance(series, list)
+            for item in series:
+                assert "date" in item and "net_inflow" in item
 
 
 def test_etf_fund_flow_non_etf():
     """非 ETF 标的应返回 unsupported_reason。"""
     data = json.loads(etf_fund_flow("000001.SZ"))
     assert data.get("unsupported_reason") is not None
+
+
+def test_etf_fund_flow_rollback_to_valid_net_inflow():
+    """rollback 终点必须是 net_inflow 非 null 的日；查询未来日期，as_of 落到最近有效日 + stale_days > 0。"""
+    # 查询一个远未来日期；DB 不会有该日数据，MCP 应回溯到最近有 net_inflow 的真实交易日
+    future_date = "20991231"
+    data = json.loads(etf_fund_flow("510300.SH", future_date))
+    assert data["as_of"] != future_date  # as_of 必须 rollback 到真实日，不能停留在未来
+    if data.get("fund_flow"):
+        # rollback 终点的 net_inflow 必须有值（否则 rollback 没起作用）
+        assert data["fund_flow"]["net_inflow"] is not None, (
+            "rollback 终点 net_inflow 不应为 null"
+        )
+        assert data["fund_flow"]["stale_days"] is not None
+        assert data["fund_flow"]["stale_days"] > 0  # 未来 date → stale_days 必然 > 0
 
 
 # ── etf_main_force_flow ──

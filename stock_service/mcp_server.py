@@ -268,10 +268,18 @@ def etf_fund_flow(
     - net_inflow: 净流入估算（万元）= 份额变动 × 当日净值
     - share_change: 份额变动（万份），正数为净申购，负数为净赎回
     - scale_change: 规模变动（亿元）
-    - recent_5d_inflow: 近5日累计净流入（万元）
+    - recent_5d_inflow: [DEPRECATED] 近5日累计净流入（万元），任一日 null → 整体 null
+    - recent_5d_inflow_series: 近5日序列 [{"date", "net_inflow"}]，新接入请用此字段
     - source: 数据口径来源说明
     - data_as_of: 实际数据日期（YYYYMMDD）
-    - stale_days: 与调用日的自然日差；部分 ETF 上游披露有延迟，>1 请谨慎使用
+    - stale_days: 与调用日的自然日差；NAV 通常 T+1 发布，最近 1-2 个交易日可能 stale_days>0
+
+    **契约保证**（消费者无需任何 fallback / 回溯 / 字段存在性判断）：
+    1. `fund_flow` 字段始终存在（除非 ETF 不支持），所有子字段始终在，缺数据为 `null`
+    2. `net_inflow` 为 `null` 时表示 NAV 未发布（罕见极端情况），调用方应直接用 `null`，**不要再回溯**
+    3. `as_of` 反映 MCP 内部 rollback 后的实际有效日期（可能 ≠ 输入 `date`），`stale_days` 暴露差距；MCP 已自动选最近 net_inflow 非 null 的日为 anchor
+    4. `recent_5d_inflow_series` 中单日 `net_inflow` 仍可能为 null（窗口里夹了 NAV 未发布日），由调用方决定如何聚合（sum/avg/count valid days）
+    5. `recent_5d_inflow` deprecated：标量丢失「哪些日缺失」信息，预聚合数对 LLM 消费者会误导；本字段未来版本将移除，请改用 `recent_5d_inflow_series`
 
     注意：净申购/净赎回分开数据暂不支持，net_inflow 为份额变动代理估算值。
     数据来源：Tushare fund_share（ETF份额变动）。
@@ -281,7 +289,7 @@ def etf_fund_flow(
         date: 可选，指定日期 YYYYMMDD 格式。不传则返回最新一日数据
     """
     result = factor_service.get_etf_fund_flow(code, date)
-    return _to_json(result)
+    return _to_json(result, exclude_none=False)
 
 
 @mcp.tool()

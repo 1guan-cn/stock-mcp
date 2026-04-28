@@ -49,7 +49,11 @@ class EtfFundFlowData(BaseModel):
     net_inflow: float | None = None         # 净流入估算（万元）≈ share_change × nav
     share_change: float | None = None       # 份额变动（万份）
     scale_change: float | None = None       # 规模变动（亿元）
-    recent_5d_inflow: float | None = None   # 近5日累计净流入（万元）
+    # [DEPRECATED] 近5日累计净流入（万元）。任一日 net_inflow=null → 整体 null（已修去原 `or 0` silent fallback）。
+    # 标量丢失「哪些日缺失」信息，预聚合数对 LLM 消费者会误导；新接入请用 recent_5d_inflow_series 自行聚合。
+    recent_5d_inflow: float | None = None
+    # 近5日序列 [{"date": YYYYMMDD, "net_inflow": 万元 or null}]。消费者自决聚合策略（sum/avg/count valid days）。
+    recent_5d_inflow_series: list[dict] | None = None
     source: str | None = None              # 数据口径来源
     data_as_of: str | None = None          # 数据真实日期（YYYYMMDD）
     stale_days: int | None = None          # 自然日差：今天 - data_as_of
