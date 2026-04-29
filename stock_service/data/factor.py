@@ -128,15 +128,7 @@ def get_fund_flow(symbol: str) -> list[dict]:
 # ── ETF 申购赎回 ──
 
 def get_etf_fund_flow(symbol: str) -> list[dict]:
-    """获取ETF申购赎回份额变动数据（增量缓存）。仅 ETF/基金有效。
-
-    数据源策略：
-    - 主源 tushare etf_share_size（T+1 晚发布，盘中查询常态滞后到 T-2）
-    - 兜底 akshare fund_etf_fund_flow_hist（eastmoney 源，盘后较快）
-    - 触发条件：tushare 最新非空 net_inflow 滞后 ≥ 2 天 → 调 akshare 补 cutoff 之后日期
-    """
-    from datetime import datetime
-
+    """获取ETF申购赎回份额变动数据（增量缓存）。仅 ETF/基金有效。"""
     try:
         today = today_str()
         start_date = n_days_ago_str(30)
@@ -158,40 +150,6 @@ def get_etf_fund_flow(symbol: str) -> list[dict]:
                     effective_min = min(dates)
                     if effective_max >= effective_min:
                         quote_store.update_coverage(symbol, effective_min, effective_max, DataType.ETF_SUBSCRIPTION)
-
-            # 兜底：tushare 最新非空 net_inflow 滞后 ≥ 2 天 → 调 akshare 补
-            ts_latest = max(
-                (r["date"] for r in (raw or []) if r.get("net_inflow") is not None),
-                default=None,
-            )
-            need_fallback = (ts_latest is None) or (
-                (datetime.strptime(today, "%Y%m%d") - datetime.strptime(ts_latest, "%Y%m%d")).days >= 2
-            )
-            if need_fallback:
-                code = symbol.split(".")[0]
-                try:
-                    ak_raw = ak.get_etf_fund_flow(code)
-                except Exception as e:
-                    logger.warning("akshare fallback get_etf_fund_flow(%s) failed: %s", code, e)
-                    ak_raw = []
-                cutoff = ts_latest or "00000000"
-                ak_fill = [
-                    r for r in ak_raw
-                    if r.get("date") and r["date"] > cutoff and r.get("net_inflow") is not None
-                ]
-                if ak_fill:
-                    factor_store.save_etf_subscription(symbol, ak_fill)
-                    ak_dates = [r["date"] for r in ak_fill]
-                    ak_max = max(ak_dates)
-                    if is_today(ak_max):
-                        ak_max = n_days_ago_str(1)
-                    ak_min = min(ak_dates)
-                    if ak_max >= ak_min:
-                        quote_store.update_coverage(symbol, ak_min, ak_max, DataType.ETF_SUBSCRIPTION)
-                    logger.info(
-                        "etf_fund_flow(%s) akshare fallback filled %d days (cutoff=%s, latest=%s)",
-                        code, len(ak_fill), cutoff, max(ak_dates),
-                    )
 
         return factor_store.get_cached_etf_subscription(symbol, n_days_ago_str(30), today)
     except Exception as e:
