@@ -139,19 +139,31 @@ def get_etf_fund_flow(code: str, date: str | None = None) -> EtfFundFlowItem:
         return EtfFundFlowItem(symbol=symbol, name=name, as_of=date or today_str())
 
     if date:
-        # 选 <= date 且 net_inflow 非 null 的最近一条；rollback 终点必须是有 NAV 的日，
-        # 否则下游会拿到 net_inflow=null 又得自行回溯（违反 provider/consumer 分层）。
-        eligible = [
-            r for r in rows
-            if r.get("date") and r["date"] <= date and r.get("net_inflow") is not None
-        ]
-        if not eligible:
-            return EtfFundFlowItem(symbol=symbol, name=name, as_of=date)
-        latest = eligible[-1]
+        # 显式 date 语义：调用方在问"X 日当天怎么样"。当日无数据 → 返回 net_inflow=null + 溯源标注，
+        # **不做日期替换**（silent rollback 是契约说谎，与 feedback_data_layer_no_proxy_fallback 冲突）。
+        matched = [r for r in rows if r.get("date") == date]
+        if not matched or matched[0].get("net_inflow") is None:
+            last_avail = next(
+                (r for r in reversed(rows) if r.get("net_inflow") is not None),
+                None,
+            )
+            flow = EtfFundFlowData(
+                net_inflow=None,
+                share_change=None,
+                scale_change=None,
+                recent_5d_inflow=None,
+                recent_5d_inflow_series=None,
+                source=last_avail.get("source") if last_avail else None,
+                data_as_of=last_avail["date"] if last_avail else None,
+                stale_days=stale_days(last_avail["date"], date) if last_avail else None,
+            )
+            return EtfFundFlowItem(symbol=symbol, name=name, as_of=date, fund_flow=flow)
+        latest = matched[0]
         idx = rows.index(latest)
         start_idx = max(0, idx - 4)
         recent_5d = rows[start_idx : idx + 1]
     else:
+        # date=None 默认语义：调用方要"最新的"，取最近非 null 行是合法语义，不是 rollback。
         eligible = [r for r in rows if r.get("net_inflow") is not None]
         if not eligible:
             return EtfFundFlowItem(symbol=symbol, name=name, as_of=today_str())

@@ -276,9 +276,12 @@ def etf_fund_flow(
 
     **契约保证**（消费者无需任何 fallback / 回溯 / 字段存在性判断）：
     1. `fund_flow` 字段始终存在（除非 ETF 不支持），所有子字段始终在，缺数据为 `null`
-    2. `net_inflow` 为 `null` 时表示 NAV 未发布（罕见极端情况），调用方应直接用 `null`，**不要再回溯**
-    3. `as_of` 反映 MCP 内部 rollback 后的实际有效日期（可能 ≠ 输入 `date`），`stale_days` 暴露差距；MCP 已自动选最近 net_inflow 非 null 的日为 anchor
-    4. `recent_5d_inflow_series` 中单日 `net_inflow` 仍可能为 null（窗口里夹了 NAV 未发布日），由调用方决定如何聚合（sum/avg/count valid days）
+    2. `net_inflow` 为 `null` 时表示该日 NAV 未发布或显式 `date` 当日无数据，调用方应直接用 `null`，**不要再回溯**
+    3. **`as_of` 语义**：
+       - 不传 `date`（默认）：返回最近 `net_inflow` 非 null 行；`as_of` = 该行日期；`data_as_of` = 同值
+       - 显式传 `date` 且当日有数据：`as_of` = `date`；`data_as_of` = `date`；`stale_days` = 0
+       - 显式传 `date` 但当日无数据：`as_of` = `date`（**不替换**），`net_inflow=null`，`data_as_of` = 最近可得日（仅溯源用），`stale_days` = `date` 与最近可得日的自然日差
+    4. `recent_5d_inflow_series` 中单日 `net_inflow` 仍可能为 null（窗口里夹了 NAV 未发布日），由调用方决定如何聚合（sum/avg/count valid days）。显式 `date` 当日无数据时整个 `recent_5d_inflow_series` = `null`（无可锚定的窗口）
     5. `recent_5d_inflow` deprecated：标量丢失「哪些日缺失」信息，预聚合数对 LLM 消费者会误导；本字段未来版本将移除，请改用 `recent_5d_inflow_series`
 
     注意：净申购/净赎回分开数据暂不支持，net_inflow 为份额变动代理估算值。

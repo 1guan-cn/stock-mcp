@@ -74,19 +74,42 @@ def test_etf_fund_flow_non_etf():
     assert data.get("unsupported_reason") is not None
 
 
-def test_etf_fund_flow_rollback_to_valid_net_inflow():
-    """rollback 终点必须是 net_inflow 非 null 的日；查询未来日期，as_of 落到最近有效日 + stale_days > 0。"""
-    # 查询一个远未来日期；DB 不会有该日数据，MCP 应回溯到最近有 net_inflow 的真实交易日
+def test_etf_fund_flow_explicit_date_no_data_returns_null():
+    """显式 date 当日无数据时返回 net_inflow=null，as_of=date 不替换；data_as_of 标注最近可得日。
+
+    新契约（替代旧 silent rollback）：调用方传 `date=20991231` 是问"那一天怎么样"，
+    应直接返回"那一天没数据"+ 溯源标注，不应替换成另一天的值。
+    """
     future_date = "20991231"
     data = json.loads(etf_fund_flow("510300.SH", future_date))
-    assert data["as_of"] != future_date  # as_of 必须 rollback 到真实日，不能停留在未来
-    if data.get("fund_flow"):
-        # rollback 终点的 net_inflow 必须有值（否则 rollback 没起作用）
-        assert data["fund_flow"]["net_inflow"] is not None, (
-            "rollback 终点 net_inflow 不应为 null"
-        )
-        assert data["fund_flow"]["stale_days"] is not None
-        assert data["fund_flow"]["stale_days"] > 0  # 未来 date → stale_days 必然 > 0
+    # as_of 必须等于请求日期，不替换
+    assert data["as_of"] == future_date, (
+        f"as_of 应保持请求日期 {future_date}，实际 {data['as_of']}（疑似 silent rollback）"
+    )
+    assert data.get("fund_flow") is not None, "fund_flow 字段应始终存在"
+    flow = data["fund_flow"]
+    # 当日无数据 → net_inflow=null
+    assert flow["net_inflow"] is None, (
+        "未来日期当日不应有数据；net_inflow 必须为 null（不允许 rollback 到他日值）"
+    )
+    # data_as_of 标注最近可得日，stale_days 暴露差距
+    assert flow["data_as_of"] is not None, "应有最近可得日的溯源标注"
+    assert flow["data_as_of"] != future_date, "data_as_of 应是真实交易日，非未来日"
+    assert flow["stale_days"] is not None and flow["stale_days"] > 0
+
+
+def test_etf_fund_flow_explicit_date_match_returns_value():
+    """显式 date 当日有数据 → 返回该日值，stale_days=0。"""
+    # 用一个最近可能有数据的日期；如果 DB 里恰好没这日，跳过断言以容错
+    data_default = json.loads(etf_fund_flow("510300.SH"))
+    if not data_default.get("fund_flow") or not data_default["fund_flow"].get("data_as_of"):
+        return  # DB 无数据时跳过
+    real_date = data_default["fund_flow"]["data_as_of"]
+    data = json.loads(etf_fund_flow("510300.SH", real_date))
+    assert data["as_of"] == real_date
+    assert data["fund_flow"]["net_inflow"] is not None
+    assert data["fund_flow"]["data_as_of"] == real_date
+    assert data["fund_flow"]["stale_days"] == 0
 
 
 # ── etf_main_force_flow ──
