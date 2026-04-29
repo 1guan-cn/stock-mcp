@@ -92,8 +92,7 @@ def _fetch_bid_ask_tencent(code: str, asset_type: str = "stock") -> dict | None:
 
         def _p(idx: int) -> float | None:
             try:
-                v = float(fields[idx])
-                return v if v != 0 else None
+                return float(fields[idx])
             except (ValueError, IndexError):
                 return None
 
@@ -321,11 +320,11 @@ def get_realtime_quote(code: str, asset_type: str) -> dict | None:
     for i in range(1, 6):
         sell_price = data.get(f"sell_{i}")
         sell_vol = data.get(f"sell_{i}_vol")
-        if sell_price is not None and sell_vol is not None:
+        if sell_price is not None and sell_price > 0 and sell_vol is not None:
             asks.append({"price": sell_price, "volume": sell_vol})
         buy_price = data.get(f"buy_{i}")
         buy_vol = data.get(f"buy_{i}_vol")
-        if buy_price is not None and buy_vol is not None:
+        if buy_price is not None and buy_price > 0 and buy_vol is not None:
             bids.append({"price": buy_price, "volume": buy_vol})
 
     return {
