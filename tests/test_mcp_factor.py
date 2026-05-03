@@ -171,6 +171,13 @@ def test_index_valuation_data_unavailable():
         assert data.get("unsupported_reason") == "index_data_unavailable"
 
 
+def test_index_valuation_symbol_not_found():
+    """无效代码显式返回 unsupported_reason=symbol_not_found。"""
+    data = json.loads(index_valuation_percentile("AAAA.XX"))
+    assert data.get("pe_ttm") is None
+    assert data.get("unsupported_reason") == "symbol_not_found"
+
+
 # ── commodity_price_percentile ──
 
 def test_gold_percentile():
