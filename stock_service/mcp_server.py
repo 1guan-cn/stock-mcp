@@ -336,9 +336,18 @@ def index_valuation_percentile(
     - pb: 当前PB
     - pb_percentile_3y: PB在3年历史中的百分位
     - as_of: 数据日期
+    - unsupported_reason: 数据缺失原因枚举（仅在数据缺失时填）
 
-    覆盖范围：A股宽基/行业指数、ETF（通过跟踪指数映射）。
-    ETF估值通过 _registry 映射到跟踪指数获取。
+    覆盖范围（受 tushare `index_dailybasic` 当前账户套餐限制）：
+
+    - ✅ **主流宽基指数**（000300 沪深300 / 000905 中证500 / 000016 上证50 / 399006 创业板指）返 PE/PB
+    - ✅ 跟踪上述宽基的 **ETF**（如 510300 / 510500 / 510050 / 159915 / 159919），通过 `_registry` 映射回跟踪指数
+    - ❌ **中证主题/行业指数**（93xxxx / H3xxxx / 部分 000xxx 主题，如中证医药、中证白酒、中证证券、中证军工等）当前 tushare 套餐返空 → `unsupported_reason=index_data_unavailable`
+    - ❌ **未在 `_registry` 内的 ETF** → `unsupported_reason=index_not_in_registry`
+    - ❌ 海外指数 / 非 A 股标的 → 在 `_registry` 显式标 None
+    - ❌ symbol 解析不到 → `unsupported_reason=symbol_not_found`
+
+    consumer 收到 unsupported_reason 时应走自身降级链（如价格代理、外部估值数据源）。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000300.SH"（沪深300）、"510300.SH"（沪深300ETF）、"399006.SZ"（创业板指）

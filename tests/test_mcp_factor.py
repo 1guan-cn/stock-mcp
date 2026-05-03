@@ -153,6 +153,24 @@ def test_etf_valuation():
     assert data["asset_type"] == "fund"
 
 
+def test_etf_valuation_not_in_registry():
+    """ETF 未在 _registry 时显式返回 unsupported_reason=index_not_in_registry。"""
+    # 行业主题 ETF（非 _registry 内）
+    data = json.loads(index_valuation_percentile("560800.SH"))
+    assert data["asset_type"] == "fund"
+    assert data.get("pe_ttm") is None
+    assert data.get("unsupported_reason") == "index_not_in_registry"
+
+
+def test_index_valuation_data_unavailable():
+    """中证主题指数当前 tushare 套餐不返 PE/PB 时显式返回 unsupported_reason=index_data_unavailable。"""
+    # _registry 内但 tushare 不返该指数 PE/PB 数据
+    data = json.loads(index_valuation_percentile("512010.SH"))
+    assert data["asset_type"] == "fund"
+    if data.get("pe_ttm") is None:
+        assert data.get("unsupported_reason") == "index_data_unavailable"
+
+
 # ── commodity_price_percentile ──
 
 def test_gold_percentile():

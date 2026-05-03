@@ -98,6 +98,7 @@ class ValuationPercentileItem(BaseModel):
     pb_percentile_3y: float | None = None
     dividend_yield: float | None = None
     as_of: str | None = None
+    unsupported_reason: UnsupportedReason | None = None  # 数据缺失原因（symbol_not_found / index_not_in_registry / index_data_unavailable）
 
 
 # ── V 因子：商品价格分位 ──

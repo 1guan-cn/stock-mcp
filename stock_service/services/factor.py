@@ -261,7 +261,10 @@ def get_index_valuation_percentile(code: str) -> ValuationPercentileItem:
     listing_data.ensure_data()
     symbols = listing_data.resolve_symbols(code=code)
     if not symbols:
-        return ValuationPercentileItem(symbol=code, name="", asset_type=AssetType.INDEX)
+        return ValuationPercentileItem(
+            symbol=code, name="", asset_type=AssetType.INDEX,
+            unsupported_reason=UnsupportedReason.SYMBOL_NOT_FOUND,
+        )
     symbol, name, asset_type_str = symbols[0]
     asset = AssetType(asset_type_str)
 
@@ -269,7 +272,10 @@ def get_index_valuation_percentile(code: str) -> ValuationPercentileItem:
     if asset == AssetType.FUND:
         index_symbol = factor_data.get_index_for_etf(symbol)
         if not index_symbol:
-            return ValuationPercentileItem(symbol=symbol, name=name, asset_type=asset)
+            return ValuationPercentileItem(
+                symbol=symbol, name=name, asset_type=asset,
+                unsupported_reason=UnsupportedReason.INDEX_NOT_IN_REGISTRY,
+            )
 
     try:
         rows = factor_data.get_index_valuation_history(index_symbol)
@@ -278,7 +284,10 @@ def get_index_valuation_percentile(code: str) -> ValuationPercentileItem:
         rows = []
 
     if not rows:
-        return ValuationPercentileItem(symbol=symbol, name=name, asset_type=asset)
+        return ValuationPercentileItem(
+            symbol=symbol, name=name, asset_type=asset,
+            unsupported_reason=UnsupportedReason.INDEX_DATA_UNAVAILABLE,
+        )
 
     latest = rows[-1]
     pe_ttm = latest.get("pe_ttm")

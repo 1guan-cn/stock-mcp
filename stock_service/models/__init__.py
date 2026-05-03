@@ -37,6 +37,9 @@ class UnsupportedReason(StrEnum):
     NOT_ETF = "not_etf"
     INDEX_NOT_SUPPORTED = "index_not_supported"
     ETF_NO_MAIN_FORCE_DATA = "etf_no_main_force_data"
+    SYMBOL_NOT_FOUND = "symbol_not_found"
+    INDEX_NOT_IN_REGISTRY = "index_not_in_registry"
+    INDEX_DATA_UNAVAILABLE = "index_data_unavailable"
 
 
 class FinanceReportType(StrEnum):
