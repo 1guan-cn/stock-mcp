@@ -70,6 +70,7 @@ class PercentileItem(BaseModel):
     symbol: str
     name: str
     asset_type: AssetType
+    as_of: str | None = None  # 序列最末日 YYYYMMDD（与 index_valuation_percentile.as_of 对齐）；bars 为空时 None
     percentiles: list[PercentileData]
 
 
@@ -122,6 +123,7 @@ class TechnicalItem(BaseModel):
     symbol: str
     name: str
     asset_type: AssetType
+    as_of: str | None = None  # 序列最末日 YYYYMMDD（与 index_valuation_percentile.as_of 对齐）；bars 为空时 None
     technical: TechnicalData
 
 

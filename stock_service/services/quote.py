@@ -157,6 +157,7 @@ def _get_single_percentile(
     if not bars:
         return PercentileItem(
             symbol=symbol, name=name, asset_type=asset_type,
+            as_of=None,
             percentiles=[
                 PercentileData(period=p, percentile=None, current_price=None, days=0)
                 for p, _ in _PERCENTILE_PERIODS
@@ -214,6 +215,7 @@ def _get_single_percentile(
 
     return PercentileItem(
         symbol=symbol, name=name, asset_type=asset_type,
+        as_of=bars[-1].date,
         percentiles=percentiles,
     )
 
@@ -526,6 +528,7 @@ def _get_single_technical(
         symbol=symbol,
         name=name,
         asset_type=asset_type,
+        as_of=daily_item.bars[-1].date if daily_item.bars else None,
         technical=technical,
     )
 

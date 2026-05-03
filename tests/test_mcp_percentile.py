@@ -47,3 +47,14 @@ def test_batch():
     symbols = [item["symbol"] for item in data["items"]]
     for code in codes:
         assert code in symbols
+
+
+def test_percentile_as_of_present():
+    """as_of 字段在序列非空时暴露序列最末日（YYYYMMDD）。"""
+    data = _parse(get_percentile("000001.SH"))
+    item = data["items"][0]
+    # 主流指数必有数据 → as_of 应有值且为 8 位日期
+    assert "as_of" in item
+    assert item["as_of"] is not None
+    assert len(item["as_of"]) == 8
+    assert item["as_of"].isdigit()

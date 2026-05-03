@@ -156,6 +156,9 @@ def get_technical(
     返回 MA5/MA10/MA20/MA60、MA20偏离度、均线状态(bullish/bearish/tangled)、
     5日/20日量比、5日/20日涨跌幅、区间高低点及百分位、从高点回撤幅度、连续下跌天数。
 
+    顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），与 `index_valuation_percentile.as_of` 对齐，
+    供 consumer 检测 stale。当上游序列为空时 as_of 为 null。
+
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）
         period: 计算区间天数，默认 60
@@ -172,6 +175,7 @@ def get_technical_batch(
     """批量查询多个股票/基金/指数的技术指标。
 
     一次性获取多个标的的 MA、量能、涨跌幅、高低点等技术指标，减少多次调用开销。
+    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null。
 
     Args:
         codes: 证券代码列表，如 ["000001.SH", "399001.SZ", "399006.SZ"]
@@ -189,6 +193,7 @@ def get_percentile_batch(
 
     一次性获取多个标的在 6个月/1年/2年/3年四个时间窗口的价格百分位（0-100），减少多次调用开销。
     股票还会额外返回 PE-TTM 百分位和 PB 百分位（过滤掉负值后计算），基金/指数不返回。
+    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null。
 
     Args:
         codes: 证券代码列表，如 ["510300.SH", "510500.SH", "512010.SH"]
@@ -206,6 +211,9 @@ def get_percentile(
     返回最近 6 个月、1 年、2 年、3 年四个时间窗口的价格百分位（0-100），
     百分位越低表示当前价格越接近历史低位。使用前复权价格计算。
     股票还会额外返回 PE-TTM 百分位和 PB 百分位（过滤掉负值后计算），基金/指数不返回。
+
+    顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），与 `index_valuation_percentile.as_of` 对齐，
+    供 consumer 检测 stale。当上游序列为空时 as_of 为 null。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）
