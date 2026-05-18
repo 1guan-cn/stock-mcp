@@ -416,6 +416,36 @@ def get_realtime_quote(
 
 
 @mcp.tool()
+def get_reverse_repo_rate(
+    codes: list[str] | None = None,
+) -> str:
+    """查询国债逆回购实时年化收益率（沪市 GC 系列 + 深市 R- 系列）。
+
+    国债逆回购是 T+0 短期借贷品种，**报价即年化收益率（百分比）**，
+    rate=1.41 表示 当前 1.41% 的年化利率。数据来源：腾讯财经（盘后返回当日最后撮合）。
+
+    返回字段：
+    - rate: 当前年化收益率 %
+    - pre_close: 昨日加权 %
+    - change: 收益率绝对变化（百分点，= rate - pre_close）
+    - pct_chg: 相对昨收的百分比变化 %（对逆回购参考意义较低，因昨收基数小）
+    - open / high / low: 今开 / 最高 / 最低（单位均为年化收益率 %）
+    - amount: 成交额（元）
+
+    Args:
+        codes: 可选品种列表，支持三种格式（大小写均可）：
+            - 标准名："GC001"、"GC007"、"R-001"、"R-007"
+            - 纯代码："204001"、"131810"
+            - 完整代码："204001.SH"、"131810.SZ"
+            不传则返回全部 18 个常用品种：
+              沪市 GC001/GC002/GC003/GC004/GC007/GC014/GC028/GC091/GC182
+              深市 R-001/R-002/R-003/R-004/R-007/R-014/R-028/R-091/R-182
+    """
+    result = quote_service.get_reverse_repo_quotes(codes=codes)
+    return _to_json(result)
+
+
+@mcp.tool()
 async def search_news(
     keywords: list[str],
 ) -> str:

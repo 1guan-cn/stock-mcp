@@ -154,3 +154,23 @@ class RealtimeQuote(BaseModel):
     volume_ratio: float | None = None    # 量比
     asks: list[BidAsk] | None = None     # 卖1-5
     bids: list[BidAsk] | None = None     # 买1-5
+
+
+class ReverseRepoQuote(BaseModel):
+    code: str                          # 纯代码，如 "204001"
+    symbol: str                        # 带交易所后缀，如 "204001.SH"
+    name: str                          # GC001 / R-001
+    exchange: str                      # SSE / SZSE
+    rate: float                        # 当前年化收益率 %
+    pre_close: float | None = None     # 昨日加权 %
+    change: float | None = None        # 收益率绝对变化（百分点）
+    pct_chg: float | None = None       # 相对昨收的百分比变化 %
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    amount: float | None = None        # 成交额（元）
+
+
+class ReverseRepoResponse(BaseModel):
+    total: int
+    items: list[ReverseRepoQuote]

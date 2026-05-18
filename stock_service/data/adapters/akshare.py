@@ -2,6 +2,7 @@
 
 import logging
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -22,6 +23,9 @@ def _eastmoney_market_code(code: str, asset_type: str = "stock") -> int | str:
         return 105
     if asset_type == "global_index":
         return 100
+    # 国债逆回购: 沪市 204xxx / 深市 131xxx
+    if asset_type == "repo":
+        return 1 if code.startswith("204") else 0
     # 沪市: 6xx(股票), 5xx(ETF)
     if code.startswith(("6", "5")):
         return 1
@@ -51,6 +55,9 @@ def _tencent_market_prefix(code: str, asset_type: str = "stock") -> str:
     if asset_type == "global_index":
         # 腾讯不支持全球指数，返回空让调用方 fallback
         return ""
+    if asset_type == "repo":
+        # 国债逆回购: 沪市 204xxx / 深市 131xxx
+        return "sh" if code.startswith("204") else "sz"
     if code.startswith(("6", "5")):
         return "sh"
     if asset_type == "index":
@@ -342,6 +349,72 @@ def get_realtime_quote(code: str, asset_type: str) -> dict | None:
         "asks": asks if asks else None,
         "bids": bids if bids else None,
     }
+
+
+# ── 国债逆回购 ──
+
+# 常用品种白名单：(纯代码, 标准名, 交易所)
+REVERSE_REPO_CATALOG: tuple[tuple[str, str, str], ...] = (
+    ("204001", "GC001", "SSE"),
+    ("204002", "GC002", "SSE"),
+    ("204003", "GC003", "SSE"),
+    ("204004", "GC004", "SSE"),
+    ("204007", "GC007", "SSE"),
+    ("204014", "GC014", "SSE"),
+    ("204028", "GC028", "SSE"),
+    ("204091", "GC091", "SSE"),
+    ("204182", "GC182", "SSE"),
+    ("131810", "R-001", "SZSE"),
+    ("131811", "R-002", "SZSE"),
+    ("131800", "R-003", "SZSE"),
+    ("131809", "R-004", "SZSE"),
+    ("131801", "R-007", "SZSE"),
+    ("131802", "R-014", "SZSE"),
+    ("131803", "R-028", "SZSE"),
+    ("131805", "R-091", "SZSE"),
+    ("131806", "R-182", "SZSE"),
+)
+
+
+def _fetch_one_reverse_repo(code: str, name: str, exchange: str) -> dict | None:
+    """拉取单个国债逆回购品种实时报价（腾讯优先，东财兜底）。"""
+    data = _fetch_bid_ask_tencent(code, "repo")
+    if data is None:
+        data = _fetch_bid_ask_em(code, "repo")
+    if data is None or data.get("最新") is None:
+        return None
+    suffix = "SH" if exchange == "SSE" else "SZ"
+    return {
+        "code": code,
+        "symbol": f"{code}.{suffix}",
+        "name": name,
+        "exchange": exchange,
+        "rate": data.get("最新"),
+        "pre_close": data.get("昨收"),
+        "change": data.get("涨跌"),
+        "pct_chg": data.get("涨幅"),
+        "open": data.get("今开"),
+        "high": data.get("最高"),
+        "low": data.get("最低"),
+        "amount": data.get("金额"),
+    }
+
+
+def get_reverse_repo_quotes(catalog: list[tuple[str, str, str]]) -> list[dict]:
+    """并发拉取国债逆回购品种实时报价，返回标准化 dict 列表。
+
+    Args:
+        catalog: (纯代码, 标准名, 交易所) 元组列表
+    """
+    if not catalog:
+        return []
+    with ThreadPoolExecutor(max_workers=min(8, len(catalog))) as executor:
+        futures = [
+            executor.submit(_fetch_one_reverse_repo, code, name, ex)
+            for code, name, ex in catalog
+        ]
+        results = [f.result() for f in futures]
+    return [r for r in results if r is not None]
 
 
 def get_northbound_daily() -> list[dict]:

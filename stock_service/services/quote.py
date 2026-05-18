@@ -18,10 +18,13 @@ from stock_service.models.quote import (
     PercentileItem,
     PercentileResponse,
     RealtimeQuote,
+    ReverseRepoQuote,
+    ReverseRepoResponse,
     TechnicalData,
     TechnicalItem,
     TechnicalResponse,
 )
+from stock_service.data.adapters.akshare import REVERSE_REPO_CATALOG
 from stock_service.services._utils import calc_percentile
 
 _MAX_WORKERS = 8
@@ -608,6 +611,45 @@ def get_realtime(
         asks=asks,
         bids=bids,
     )
+
+
+# ── 国债逆回购 ──
+
+def _normalize_repo_key(raw: str) -> str:
+    """把用户输入的代码 / 名称统一为可匹配键。
+
+    接受 "GC001" / "gc001" / "204001" / "204001.SH" / "Ｒ-001" 等形态，
+    返回大写、去后缀、半角破折号的字符串用于在白名单里查找。
+    """
+    s = raw.strip().upper()
+    if s.endswith(".SH") or s.endswith(".SZ"):
+        s = s[:-3]
+    # 全角转半角的破折号
+    s = s.replace("－", "-").replace("Ｒ", "R").replace("Ｇ", "G")
+    return s
+
+
+def get_reverse_repo_quotes(
+    *,
+    codes: list[str] | None = None,
+) -> ReverseRepoResponse:
+    """获取国债逆回购实时年化收益率。
+
+    codes 不传则返回全部常用品种；传入则按白名单过滤（按纯代码或标准名匹配）。
+    """
+    if codes:
+        keys = {_normalize_repo_key(c) for c in codes}
+        catalog = [
+            (code, name, ex)
+            for code, name, ex in REVERSE_REPO_CATALOG
+            if code in keys or name.upper() in keys
+        ]
+    else:
+        catalog = list(REVERSE_REPO_CATALOG)
+
+    raw = quote_data.get_reverse_repo_quotes(catalog)
+    items = [ReverseRepoQuote(**r) for r in raw]
+    return ReverseRepoResponse(total=len(items), items=items)
 
 
 def get_technical_batch(

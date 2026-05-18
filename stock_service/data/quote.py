@@ -45,6 +45,11 @@ def get_realtime(code: str, asset_type: str) -> dict | None:
     return ak.get_realtime_quote(code, asset_type)
 
 
+def get_reverse_repo_quotes(catalog: list[tuple[str, str, str]]) -> list[dict]:
+    """获取国债逆回购实时报价（不缓存，直接透传 Adapter）。"""
+    return ak.get_reverse_repo_quotes(catalog)
+
+
 def get_adj_factors(
     symbol: str, start_date: str, end_date: str, *, is_fund: bool = False
 ) -> dict[str, float]:
