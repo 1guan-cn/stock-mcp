@@ -1,0 +1,33 @@
+stock_service/data/quote.py
+  s_04bdae3150a815::t_406b9221061299 48-52
+stock_service/models/quote.py
+  s_04bdae3150a815::t_e73576f20575a7 157-176
+tests/test_mcp_reverse_repo.py
+  s_04bdae3150a815::t_32954839459803 1-62
+stock_service/services/quote.py
+  s_04bdae3150a815::t_f81cfaafefa6f4 21-22,27
+  s_04bdae3150a815::t_d357d32e2d8878 616-654
+stock_service/data/adapters/akshare.py
+  s_04bdae3150a815::t_d9c5c97379aede 5
+  s_04bdae3150a815::t_356325794fcc06 26-28
+  s_04bdae3150a815::t_f0bb2b704a417e 58-60
+  s_04bdae3150a815::t_7d0cefd9b4ad3b 354-419
+stock_service/mcp_server.py
+  s_04bdae3150a815::t_8e7654012a28af 419-447
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "d467cd542d183d3cb6ceb9a8e1a3b803a8eab72f",
+  "prompts": {},
+  "sessions": {
+    "s_04bdae3150a815": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdbb416b-12f6-4259-9d34-28a052f743a2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Harry Liu <747311978@qq.com>"
+    }
+  }
+}
