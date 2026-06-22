@@ -39,7 +39,7 @@ def get_daily_quote(
     adjust: str = "qfq",
     detail: str = "simple",
 ) -> str:
-    """查询股票/基金/指数日线行情数据。
+    """[tushare] 查询股票/基金/指数日线行情数据。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）、"399001.SZ"（深证成指）、"399006.SZ"（创业板指）
@@ -60,7 +60,7 @@ def get_daily_quote(
 
 @mcp.tool()
 def search_stock(keyword: str) -> str:
-    """搜索股票、基金或指数，按名称或代码模糊匹配。
+    """[tushare] 搜索股票、基金或指数，按名称或代码模糊匹配。
 
     Args:
         keyword: 搜索关键词，如 "平安"、"银行"、"000001"、"沪深300"、"上证"、"创业板"
@@ -76,7 +76,7 @@ def list_stocks(
     area: str | None = None,
     keyword: str | None = None,
 ) -> str:
-    """按条件筛选股票列表。所有参数均可选，不传则返回全部。
+    """[tushare] 按条件筛选股票列表。所有参数均可选，不传则返回全部。
 
     Args:
         market: 市场类别，可选值："主板"、"创业板"、"科创板"、"CDR"、"北交所"
@@ -96,7 +96,7 @@ def list_funds(
     management: str | None = None,
     keyword: str | None = None,
 ) -> str:
-    """按条件筛选基金/ETF列表。所有参数均可选，不传则返回全部。
+    """[tushare] 按条件筛选基金/ETF列表。所有参数均可选，不传则返回全部。
 
     Args:
         fund_type: 基金类型，如 "ETF"、"LOF"
@@ -113,7 +113,7 @@ def list_funds(
 def list_indexes(
     keyword: str | None = None,
 ) -> str:
-    """按条件筛选指数列表。参数可选，不传则返回全部。
+    """[tushare] 按条件筛选指数列表。参数可选，不传则返回全部。
 
     Args:
         keyword: 关键词搜索（名称或代码），如 "上证"、"沪深300"、"000001.SH"
@@ -129,7 +129,7 @@ def get_financial(
     start_period: str,
     end_period: str,
 ) -> str:
-    """查询上市公司财务报表数据。
+    """[tushare] 查询上市公司财务报表数据。
 
     Args:
         code: 股票代码（带交易所后缀），如 "000001.SZ"（平安银行）
@@ -151,7 +151,7 @@ def get_technical(
     code: str,
     period: int = 60,
 ) -> str:
-    """查询股票/基金/指数的技术指标（均线、量能、涨跌幅、高低点等）。
+    """[tushare] 查询股票/基金/指数的技术指标（均线、量能、涨跌幅、高低点等）。
 
     返回 MA5/MA10/MA20/MA60、MA20偏离度、均线状态(bullish/bearish/tangled)、
     5日/20日量比、5日/20日涨跌幅、区间高低点及百分位、从高点回撤幅度、连续下跌天数。
@@ -172,7 +172,7 @@ def get_technical_batch(
     codes: list[str],
     period: int = 60,
 ) -> str:
-    """批量查询多个股票/基金/指数的技术指标。
+    """[tushare] 批量查询多个股票/基金/指数的技术指标。
 
     一次性获取多个标的的 MA、量能、涨跌幅、高低点等技术指标，减少多次调用开销。
     每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null。
@@ -189,7 +189,7 @@ def get_technical_batch(
 def get_percentile_batch(
     codes: list[str],
 ) -> str:
-    """批量查询多个股票/基金/指数当前价格在历史区间中的百分位。
+    """[tushare] 批量查询多个股票/基金/指数当前价格在历史区间中的百分位。
 
     一次性获取多个标的在 6个月/1年/2年/3年四个时间窗口的价格百分位（0-100），减少多次调用开销。
     股票还会额外返回 PE-TTM 百分位和 PB 百分位（过滤掉负值后计算），基金/指数不返回。
@@ -206,7 +206,7 @@ def get_percentile_batch(
 def get_percentile(
     code: str,
 ) -> str:
-    """查询股票/基金/指数当前价格在历史区间中的百分位。
+    """[tushare] 查询股票/基金/指数当前价格在历史区间中的百分位。
 
     返回最近 6 个月、1 年、2 年、3 年四个时间窗口的价格百分位（0-100），
     百分位越低表示当前价格越接近历史低位。使用前复权价格计算。
@@ -228,6 +228,8 @@ def get_factor(
     date: str | None = None,
 ) -> str:
     """查询股票/基金/指数的多因子数据（估值V + 资金流F + 北向资金I）。
+
+    数据源混合：估值与 A 股主力资金来自 Tushare，北向资金来自 AKShare。
 
     返回三类因子：
     - valuation: PE-TTM、PB、股息率（当前值，百分位请用 get_percentile）
@@ -254,6 +256,8 @@ def get_factor_batch(
 ) -> str:
     """批量查询多个股票/基金/指数的多因子数据（估值V + 资金流F + 北向资金I）。
 
+    数据源混合：估值与 A 股主力资金来自 Tushare，北向资金来自 AKShare。
+
     一次性获取多个标的的估值（当前值）、资金流、北向资金因子，减少多次调用开销。
     估值百分位请用 get_percentile_batch。
 
@@ -270,7 +274,7 @@ def etf_fund_flow(
     code: str,
     date: str | None = None,
 ) -> str:
-    """查询ETF申购赎回资金流数据（F因子）。
+    """[tushare] 查询ETF申购赎回资金流数据（F因子）。
 
     返回ETF净申购/赎回情况：
     - net_inflow: 净流入估算（万元）= 份额变动 × 当日净值
@@ -308,7 +312,7 @@ def etf_main_force_flow(
     code: str,
     date: str | None = None,
 ) -> str:
-    """查询股票主力资金结构数据（I因子）。
+    """[tushare] 查询股票主力资金结构数据（I因子）。
 
     返回主力资金构成：
     - large_order_net: 大单净流入（元）
@@ -336,7 +340,7 @@ def etf_main_force_flow(
 def index_valuation_percentile(
     code: str,
 ) -> str:
-    """查询指数/ETF的PE-TTM和PB在3年历史中的分位（V因子）。
+    """[tushare] 查询指数/ETF的PE-TTM和PB在3年历史中的分位（V因子）。
 
     返回真实估值分位（相对于3年历史），精度优于价格代理分位：
     - pe_ttm: 当前PE-TTM
@@ -371,6 +375,8 @@ def commodity_price_percentile(
 ) -> str:
     """查询商品（黄金/铜/原油等）价格在历史区间中的百分位（V因子补充）。
 
+    数据源：AKShare 商品行情接口。
+
     返回商品价格百分位：
     - current_price: 当前价格
     - percentile_52w: 近52周价格分位（0-100）
@@ -397,6 +403,8 @@ def get_realtime_quote(
     code: str,
 ) -> str:
     """获取股票/ETF/指数/港股/美股的实时行情（含五档盘口）。
+
+    数据源：腾讯财经优先，东方财富 fallback。
 
     返回当前价格、涨跌幅、涨跌额、今开、最高、最低、昨收、成交量、成交额，
     股票和ETF还返回五档买卖盘口（asks/bids）、换手率、量比。
@@ -451,6 +459,8 @@ async def search_news(
 ) -> str:
     """搜索行业实时新闻并返回 AI 总结。
 
+    数据源：阿里云百炼 WebSearch。
+
     输入行业关键词列表，通过大模型联网搜索最近一周的重要新闻，
     返回每个行业的新闻摘要（关键事件、政策变化、市场影响）。
 
@@ -467,7 +477,7 @@ def get_margin_detail(
     date: str | None = None,
     n_days: int = 1,
 ) -> str:
-    """查询股票/ETF的融资融券数据。
+    """[tushare] 查询股票/ETF的融资融券数据。
 
     返回字段：
     - rzye:  融资余额（元）
@@ -492,7 +502,7 @@ def get_margin_detail(
 
 @mcp.tool()
 def check_trade_date(date: str) -> str:
-    """判断指定日期是否为 A 股交易日。
+    """[tushare] 判断指定日期是否为 A 股交易日。
 
     Args:
         date: 日期，YYYYMMDD 格式，如 "20240101"
