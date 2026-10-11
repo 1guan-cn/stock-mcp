@@ -459,39 +459,45 @@ def _table_exists(conn: psycopg.Connection, table_name: str) -> bool:
 
 def cmd_migrate(conn: psycopg.Connection) -> None:
     applied = _get_applied_versions(conn)
-    pending = [m for m in MIGRATIONS if m["version"] not in applied]
+    pending = sorted(
+        (m for m in MIGRATIONS if m["version"] not in applied),
+        key=lambda x: x["version"],
+    )
 
     if not pending:
         print("所有迁移已执行，无需操作。")
         return
 
-    for m in sorted(pending, key=lambda x: x["version"]):
-        version, name = m["version"], m["name"]
-        print(f"执行迁移 v{version}: {name} ...", end=" ")
+    # 全部待执行迁移放在**同一个事务**里：要么整体提交，要么整体回滚。
+    # 逐条提交会在中途失败时留下「半迁移」schema —— 2026-10-11 就是这么坏的：
+    # v10/v11 已提交、v12 失败，而旧进程依赖的 data_coverage 已被 v11 删掉，
+    # 服务在人工干预前一直处于故障态。整体回滚后，失败 = schema 未发生任何变更，
+    # 修好迁移重跑即可。（PostgreSQL 的 DDL 支持事务。）
+    executed: list[str] = []
+    try:
+        with conn.transaction():
+            for m in pending:
+                version, name = m["version"], m["name"]
 
-        # 迁移 v2 需要旧表存在才执行数据迁移部分
-        if version == 2:
-            if not _table_exists(conn, "daily_bar") and not _table_exists(conn, "etf_adj_factor"):
-                print("旧表不存在，跳过数据迁移。")
+                # 迁移 v2 需要旧表存在才执行数据迁移部分
+                skip_v2 = version == 2 and not (
+                    _table_exists(conn, "daily_bar") or _table_exists(conn, "etf_adj_factor")
+                )
+                if skip_v2:
+                    print(f"v{version}: {name} 旧表不存在，跳过数据迁移。")
+                else:
+                    conn.execute(m["up"])
+                    executed.append(f"v{version}: {name}")
+
                 conn.execute(
                     "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)",
                     (version, name, datetime.now(timezone.utc)),
                 )
-                conn.commit()
-                continue
+    except Exception as e:
+        print(f"❌ 迁移失败，已整体回滚（schema 未发生任何变更）: {e}")
+        sys.exit(1)
 
-        try:
-            conn.execute(m["up"])
-            conn.execute(
-                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)",
-                (version, name, datetime.now(timezone.utc)),
-            )
-            conn.commit()
-            print("OK")
-        except Exception as e:
-            conn.rollback()
-            print(f"失败: {e}")
-            sys.exit(1)
+    print(f"✅ 已提交 {len(pending)} 条迁移: {'；'.join(executed) if executed else '（无可执行项）'}")
 
 
 def cmd_status(conn: psycopg.Connection) -> None:

@@ -45,11 +45,19 @@ jobs:
             --exclude='.mcp.json' \
             ./ "${REMOTE}:${DEPLOY_DIR}/"
 
-          # 安装依赖 + 迁移 + 重启
+          # 安装依赖 → 停服 → 迁移 → 起服 → 刷新另一应用。
+          # 顺序要点：
+          #   1) 迁移前先停服：破坏性迁移会打到仍在运行的旧进程。2026-10-11 事故即
+          #      v11 DROP data_coverage 后旧进程读它就坏，而 restart 又失败 ⇒ 长期故障。
+          #   2) `pm2 stop` 在「本来未运行」时返回非 0，这里忽略是安全的（无进程可停）。
+          #   3) 迁移失败时服务保持 stopped（明确的失败态），修好迁移重跑部署即可恢复；
+          #      迁移引擎已改为整体事务，失败不会留下半迁移 schema。
+          #   4) 末尾**不能**挂 `|| true` 兜底：它会把失败伪装成 success（同上事故）。
           $SSH_CMD "export PATH=\"\$HOME/.local/bin:\$PATH\" && \
             export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\" && \
             cd ${DEPLOY_DIR} && \
             uv sync && \
+            (pm2 stop stock-service || true) && \
             uv run python scripts/migrate.py && \
-            pm2 restart ecosystem.config.cjs --update-env && \
-            pm2 reload 1guan-template 2>/dev/null || true"
+            pm2 start ecosystem.config.cjs --update-env && \
+            pm2 reload 1guan-template"
