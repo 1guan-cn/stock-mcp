@@ -20,8 +20,12 @@ def test_stock_percentile():
     assert item["asset_type"] == "stock"
     assert len(item["percentiles"]) == 4  # 6m, 1y, 2y, 3y
     p = item["percentiles"][0]
-    for key in ("period", "percentile", "current_price", "days"):
+    for key in ("period", "price_percentile", "current_price", "days"):
         assert key in p, f"缺少字段: {key}"
+    # 估值分位与价格分位必须字段名可区分，且都在同一层
+    for key in ("pe_ttm_percentile", "current_pe_ttm", "pb_percentile", "current_pb"):
+        assert key in p, f"缺少字段: {key}"
+    assert "percentile" not in p, "旧字段 percentile 应已改名为 price_percentile"
 
 
 def test_etf_percentile():
@@ -50,7 +54,7 @@ def test_batch():
 
 
 def test_percentile_as_of_present():
-    """as_of 字段在序列非空时暴露序列最末日（YYYYMMDD）。"""
+    """as_of 字段在序列非空时暴露序列最末日（YYYYMMDD），并带 stale_days。"""
     data = _parse(get_percentile("000001.SH"))
     item = data["items"][0]
     # 主流指数必有数据 → as_of 应有值且为 8 位日期
@@ -58,3 +62,5 @@ def test_percentile_as_of_present():
     assert item["as_of"] is not None
     assert len(item["as_of"]) == 8
     assert item["as_of"].isdigit()
+    # 最新交易日的数据不应被判为陈旧（允许跨周末，取 5 天容差）
+    assert item["stale_days"] <= 5, f"主流指数 stale_days 异常: {item['stale_days']}"

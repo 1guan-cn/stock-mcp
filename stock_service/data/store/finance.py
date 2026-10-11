@@ -7,8 +7,11 @@ from stock_service.database import get_pool
 _PERIOD_FIELDS = ("end_date", "period", "ann_date", "report_date", "ex_date")
 
 
-def _extract_period(record: dict) -> str:
-    """从记录中提取 period 值。"""
+def period_of(record: dict) -> str:
+    """从记录中提取报告期（YYYYMMDD）。
+
+    各报表接口的报告期字段名不一致，按优先级取第一个非空值。
+    """
     for field in _PERIOD_FIELDS:
         val = record.get(field)
         if val is not None:
@@ -30,7 +33,7 @@ def save_reports(symbol: str, report_type: str, records: list[dict]) -> None:
         (
             symbol,
             report_type,
-            _extract_period(rec),
+            period_of(rec),
             rec.get("ann_date"),
             Jsonb(rec),
         )

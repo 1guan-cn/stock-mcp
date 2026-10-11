@@ -406,20 +406,34 @@ def get_margin(symbol: str, start_date: str, end_date: str) -> list[dict]:
 
 # ── 财务数据 ──
 
-def get_financial(symbol: str, report_type: str, start_date: str, end_date: str) -> list[dict]:
-    api_name = _FINANCE_API_MAP[report_type]
-    api_func = getattr(_api(), api_name)
+def get_financial(symbol: str, report_type: str) -> list[dict]:
+    """获取财务报表原始记录（**不在 adapter 做区间过滤**）。
 
-    if report_type == "dividend":
-        df = api_func(ts_code=symbol)
-    elif report_type == "disclosure":
-        df = api_func(ts_code=symbol, end_date=end_date)
-    else:
-        df = api_func(ts_code=symbol, start_date=start_date, end_date=end_date)
+    tushare 各接口对 start_date/end_date 的语义并不统一：income / balancesheet /
+    cashflow / forecast / express 把它们当作**公告日期**，fina_indicator /
+    fina_mainbz 当作**报告期**。把「统一按报告期过滤」的请求区间直接透传，
+    会让公告日晚于区间右端的最新一期被上游静默剔除（如 2026 半年报
+    ann_date=20260828，请求 end_date=20260630 时整期消失）。
 
+    因此这里一律拉全量，报告期区间由 store 的 `period` 过滤承载
+    （见 `data/store/finance.py::get_cached_reports`）。
+    """
+    api_func = getattr(_api(), _FINANCE_API_MAP[report_type])
+
+    df = api_func(ts_code=symbol)
     if df is None or df.empty:
         return []
 
+    # income / balancesheet / cashflow 同一报告期会返回「更新前(update_flag=0)」和
+    # 「更新后(1)」两行。按标记升序排列后每期只留最后一行，即更新后的版本；
+    # 直接按 update_flag 过滤会丢掉大量只有旧标记的历史期（实测 000001.SZ
+    # income 114 期会只剩 31 期）。
+    if "update_flag" in df.columns and "end_date" in df.columns:
+        df = df.sort_values("update_flag").drop_duplicates(subset="end_date", keep="last")
+
     if "ts_code" in df.columns:
         df = df.drop(columns=["ts_code"])
-    return _clean_nan(df.to_dict("records"))
+
+    records = _clean_nan(df.to_dict("records"))
+    records.sort(key=lambda r: str(r.get("end_date") or ""))
+    return records

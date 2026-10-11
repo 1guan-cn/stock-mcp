@@ -350,24 +350,6 @@ MIGRATIONS: list[dict] = [
         """,
     },
     {
-        "version": 8,
-        "name": "create_news_search_table",
-        "up": """
-            CREATE TABLE IF NOT EXISTS news_search (
-                id          SERIAL PRIMARY KEY,
-                keyword     TEXT NOT NULL,
-                summary     TEXT NOT NULL,
-                searched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS idx_news_search_keyword
-                ON news_search (keyword, searched_at DESC);
-        """,
-        "down": """
-            DROP INDEX IF EXISTS idx_news_search_keyword;
-            DROP TABLE IF EXISTS news_search;
-        """,
-    },
-    {
         "version": 9,
         "name": "create_margin_detail_table",
         "up": """
@@ -386,6 +368,41 @@ MIGRATIONS: list[dict] = [
         """,
         "down": """
             DROP TABLE IF EXISTS margin_detail;
+        """,
+    },
+    {
+        "version": 10,
+        "name": "drop_news_search_table",
+        "up": """
+            DROP INDEX IF EXISTS idx_news_search_keyword;
+            DROP TABLE IF EXISTS news_search;
+        """,
+        "down": """
+            CREATE TABLE IF NOT EXISTS news_search (
+                id          SERIAL PRIMARY KEY,
+                keyword     TEXT NOT NULL,
+                summary     TEXT NOT NULL,
+                searched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_news_search_keyword
+                ON news_search (keyword, searched_at DESC);
+        """,
+    },
+    {
+        "version": 11,
+        "name": "drop_data_coverage_table",
+        "up": """
+            DROP TABLE IF EXISTS data_coverage;
+        """,
+        "down": """
+            CREATE TABLE IF NOT EXISTS data_coverage (
+                symbol     TEXT NOT NULL,
+                data_type  TEXT NOT NULL,
+                min_date   TEXT NOT NULL,
+                max_date   TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (symbol, data_type)
+            );
         """,
     },
 ]

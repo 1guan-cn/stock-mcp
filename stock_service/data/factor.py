@@ -2,13 +2,7 @@
 
 import logging
 
-from stock_service.data._cache import (
-    calc_missing_ranges,
-    fetch_with_cache,
-    is_today,
-    n_days_ago_str,
-    today_str,
-)
+from stock_service.data._cache import fetch_with_cache, n_days_ago_str, today_str
 from stock_service.data._registry import resolve_etf_to_index
 from stock_service.data.adapters import akshare as ak
 from stock_service.data.adapters import tushare as ts
@@ -37,15 +31,7 @@ def get_stock_valuation(symbol: str) -> ValuationData | None:
 
 def get_index_valuation(index_symbol: str) -> ValuationData | None:
     """获取指数估值（增量缓存）。"""
-    today = today_str()
-    start_date = n_days_ago_str(1095)
-
-    rows = fetch_with_cache(
-        index_symbol, DataType.INDEX_VALUATION, start_date, today,
-        fetch_fn=lambda s, a, b: ts.get_index_valuation(s, a, b),
-        save_fn=factor_store.save_index_valuation,
-        query_fn=factor_store.get_cached_index_valuation,
-    )
+    rows = get_index_valuation_history(index_symbol)
     if not rows:
         return None
 
@@ -99,62 +85,29 @@ def get_fund_flow(symbol: str) -> list[dict]:
     """
     if not symbol.endswith((".SH", ".SZ")):
         return []
-    try:
-        today = today_str()
-        start_date = n_days_ago_str(30)
-
-        coverage = quote_store.get_coverage(symbol, DataType.FUND_FLOW)
-        missing = calc_missing_ranges(start_date, today, coverage)
-
-        if missing:
-            raw = ts.get_fund_flow(symbol, start_date, today)
-            if raw:
-                factor_store.save_fund_flow(symbol, raw)
-                dates = [r["date"] for r in raw]
-                if dates:
-                    effective_max = max(dates)
-                    if is_today(effective_max):
-                        effective_max = n_days_ago_str(1)
-                    effective_min = min(dates)
-                    if effective_max >= effective_min:
-                        quote_store.update_coverage(symbol, effective_min, effective_max, DataType.FUND_FLOW)
-
-        return factor_store.get_cached_fund_flow(symbol, n_days_ago_str(30), today)
-    except Exception as e:
-        logger.warning("get_fund_flow(%s) failed: %s", symbol, e)
-        return []
+    return fetch_with_cache(
+        symbol, DataType.FUND_FLOW, n_days_ago_str(30), today_str(),
+        fetch_fn=ts.get_fund_flow,
+        save_fn=factor_store.save_fund_flow,
+        query_fn=factor_store.get_cached_fund_flow,
+    )
 
 
 # ── ETF 申购赎回 ──
 
 def get_etf_fund_flow(symbol: str) -> list[dict]:
-    """获取ETF申购赎回份额变动数据（增量缓存）。仅 ETF/基金有效。"""
-    try:
-        today = today_str()
-        start_date = n_days_ago_str(30)
-        # 多取 15 天用于差分计算首日份额变动
-        fetch_start = n_days_ago_str(45)
+    """获取ETF申购赎回份额变动数据（增量缓存）。仅 ETF/基金有效。
 
-        coverage = quote_store.get_coverage(symbol, DataType.ETF_SUBSCRIPTION)
-        missing = calc_missing_ranges(start_date, today, coverage)
-
-        if missing:
-            raw = ts.get_etf_fund_flow(symbol, fetch_start, today)
-            if raw:
-                factor_store.save_etf_subscription(symbol, raw)
-                dates = [r["date"] for r in raw]
-                if dates:
-                    effective_max = max(dates)
-                    if is_today(effective_max):
-                        effective_max = n_days_ago_str(1)
-                    effective_min = min(dates)
-                    if effective_max >= effective_min:
-                        quote_store.update_coverage(symbol, effective_min, effective_max, DataType.ETF_SUBSCRIPTION)
-
-        return factor_store.get_cached_etf_subscription(symbol, n_days_ago_str(30), today)
-    except Exception as e:
-        logger.warning("get_etf_fund_flow(%s) failed: %s", symbol, e)
-        return []
+    多取 15 天用于差分计算首日份额变动（adapter 靠相邻行差分得到份额变动）。
+    """
+    return fetch_with_cache(
+        symbol, DataType.ETF_SUBSCRIPTION, n_days_ago_str(45), today_str(),
+        fetch_fn=ts.get_etf_fund_flow,
+        save_fn=factor_store.save_etf_subscription,
+        query_fn=lambda s, a, b: factor_store.get_cached_etf_subscription(
+            s, n_days_ago_str(30), today_str()
+        ),
+    )
 
 
 # ── 商品价格 ──
@@ -179,27 +132,11 @@ def get_index_for_etf(etf_symbol: str) -> str | None:
 
 def get_northbound() -> list[dict]:
     """获取北向资金数据（增量缓存，市场级别）。"""
-    try:
-        today = today_str()
-        start_date = n_days_ago_str(30)
-
-        coverage = quote_store.get_coverage("northbound", DataType.NORTHBOUND)
-        missing = calc_missing_ranges(start_date, today, coverage)
-
-        if missing:
-            raw = ak.get_northbound_daily()
-            if raw:
-                factor_store.save_northbound(raw)
-                dates = [r["date"] for r in raw]
-                if dates:
-                    effective_max = max(dates)
-                    if is_today(effective_max):
-                        effective_max = n_days_ago_str(1)
-                    effective_min = min(dates)
-                    if effective_max >= effective_min:
-                        quote_store.update_coverage("northbound", effective_min, effective_max, DataType.NORTHBOUND)
-
-        return factor_store.get_cached_northbound(n_days_ago_str(10), today)
-    except Exception as e:
-        logger.warning("get_northbound failed: %s", e)
-        return []
+    return fetch_with_cache(
+        "northbound", DataType.NORTHBOUND, n_days_ago_str(30), today_str(),
+        fetch_fn=lambda s, a, b: ak.get_northbound_daily(),
+        save_fn=lambda s, data: factor_store.save_northbound(data),
+        query_fn=lambda s, a, b: factor_store.get_cached_northbound(
+            n_days_ago_str(10), today_str()
+        ),
+    )

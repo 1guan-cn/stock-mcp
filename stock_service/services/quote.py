@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from stock_service.data import listing as listing_data
 from stock_service.data import quote as quote_data
-from stock_service.services._utils import CST
+from stock_service.services._utils import CST, calc_percentile, stale_days
 from stock_service.models import AdjustType, AssetType, DetailLevel
 from stock_service.models.quote import (
     SIMPLE_FIELDS,
@@ -25,7 +25,6 @@ from stock_service.models.quote import (
     TechnicalResponse,
 )
 from stock_service.data.adapters.akshare import REVERSE_REPO_CATALOG
-from stock_service.services._utils import calc_percentile
 
 _MAX_WORKERS = 8
 
@@ -162,7 +161,7 @@ def _get_single_percentile(
             symbol=symbol, name=name, asset_type=asset_type,
             as_of=None,
             percentiles=[
-                PercentileData(period=p, percentile=None, current_price=None, days=0)
+                PercentileData(period=p, price_percentile=None, current_price=None, days=0)
                 for p, _ in _PERCENTILE_PERIODS
             ],
         )
@@ -204,7 +203,7 @@ def _get_single_percentile(
         percentiles.append(
             PercentileData(
                 period=period_name,
-                percentile=price_pct,
+                price_percentile=price_pct,
                 current_price=current_price,
                 min_price=round(min(closes), 4),
                 max_price=round(max(closes), 4),
@@ -219,6 +218,7 @@ def _get_single_percentile(
     return PercentileItem(
         symbol=symbol, name=name, asset_type=asset_type,
         as_of=bars[-1].date,
+        stale_days=stale_days(bars[-1].date),
         percentiles=percentiles,
     )
 
@@ -527,11 +527,13 @@ def _get_single_technical(
 
     technical = _calc_technical(daily_item.bars, period)
 
+    as_of = daily_item.bars[-1].date if daily_item.bars else None
     return TechnicalItem(
         symbol=symbol,
         name=name,
         asset_type=asset_type,
-        as_of=daily_item.bars[-1].date if daily_item.bars else None,
+        as_of=as_of,
+        stale_days=stale_days(as_of),
         technical=technical,
     )
 

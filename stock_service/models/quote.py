@@ -54,12 +54,13 @@ class DailyResponse(BaseModel):
 
 class PercentileData(BaseModel):
     period: str  # 6m / 1y / 2y / 3y
-    percentile: float | None  # 价格百分位（0-100），数据不足时为 None
+    price_percentile: float | None  # **价格**百分位（0-100），数据不足时为 None
     current_price: float | None  # 当前价格
     min_price: float | None = None  # 区间最低价
     max_price: float | None = None  # 区间最高价
     days: int  # 该区间内的交易日数量
-    # 以下为股票特有的估值百分位（基金/指数不返回）
+    # 以下为股票特有的**估值**百分位（基金/指数不返回）
+    # 注意：估值当前值取自序列末日 daily_basic，不随窗口重算，只有百分位随窗口变
     pe_ttm_percentile: float | None = None  # PE-TTM 百分位（0-100）
     current_pe_ttm: float | None = None  # 当前 PE-TTM
     pb_percentile: float | None = None  # PB 百分位（0-100）
@@ -71,6 +72,7 @@ class PercentileItem(BaseModel):
     name: str
     asset_type: AssetType
     as_of: str | None = None  # 序列最末日 YYYYMMDD（与 index_valuation_percentile.as_of 对齐）；bars 为空时 None
+    stale_days: int | None = None  # as_of 与调用日的自然日差；>3 通常意味着该标的数据陈旧/缺失
     percentiles: list[PercentileData]
 
 
@@ -124,6 +126,7 @@ class TechnicalItem(BaseModel):
     name: str
     asset_type: AssetType
     as_of: str | None = None  # 序列最末日 YYYYMMDD（与 index_valuation_percentile.as_of 对齐）；bars 为空时 None
+    stale_days: int | None = None  # as_of 与调用日的自然日差；>3 通常意味着该标的数据陈旧/缺失
     technical: TechnicalData
 
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-A 股行情查询 + MCP (Model Context Protocol) 服务。基于 FastAPI 提供 HTTP 服务，通过 SSE 挂载 MCP 工具供 AI 客户端调用。数据来源为 Tushare、AKShare 和百炼（阿里云 DashScope）。
+A 股行情查询 + MCP (Model Context Protocol) 服务。基于 FastAPI 提供 HTTP 服务，通过 SSE 挂载 MCP 工具供 AI 客户端调用。数据来源为 Tushare 和 AKShare。
 
 ## 常用命令
 
@@ -19,7 +19,7 @@ uv run pytest tests/test_mcp_factor.py -k "test_name"  # 运行单个测试
 
 ## 架构
 
-三层结构，每层按业务领域拆分为同名模块（quote / listing / finance / factor / margin / news）：
+三层结构，每层按业务领域拆分为同名模块（quote / listing / finance / factor / margin）：
 
 ```
 stock_service/
@@ -28,7 +28,7 @@ stock_service/
 ├── models/                # Pydantic 模型 & StrEnum（AssetType, AdjustType 等）
 ├── data/
 │   ├── store/             # 数据访问层（PostgreSQL 查询，psycopg）
-│   ├── adapters/          # 外部数据源适配器（tushare.py, akshare.py, bailian.py）
+│   ├── adapters/          # 外部数据源适配器（tushare.py, akshare.py）
 │   ├── _registry.py       # ETF → 跟踪指数映射表
 │   └── _cache.py          # 数据缓存
 ├── main.py                # FastAPI 入口，lifespan 管理数据库连接池

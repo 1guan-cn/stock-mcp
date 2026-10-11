@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        # 部署环境的 .env 由运维手工维护，不会随代码同步。忽略多余变量，
+        # 避免删除配置字段后残留变量导致服务启动即 ValidationError。
+        extra="ignore",
     )
 
     tushare_token: str
@@ -12,10 +15,6 @@ class Settings(BaseSettings):
     database_url: str
     host: str = "0.0.0.0"
     port: int = 8000
-    ai_base_url: str = "https://coding.dashscope.aliyuncs.com/v1"
-    ai_api_key: str = ""
-    ai_model: str = "qwen3.5-plus"
-    dashscope_api_key: str = ""
 
 
 settings = Settings()

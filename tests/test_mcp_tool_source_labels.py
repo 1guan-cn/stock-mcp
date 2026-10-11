@@ -29,7 +29,6 @@ NON_TUSHARE_TOOLS = (
     "commodity_price_percentile",
     "get_realtime_quote",
     "get_reverse_repo_rate",
-    "search_news",
 )
 
 

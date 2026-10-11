@@ -10,7 +10,6 @@ from stock_service.services import factor as factor_service
 from stock_service.services import finance as finance_service
 from stock_service.services import listing as listing_service
 from stock_service.services import margin as margin_service
-from stock_service.services import news as news_service
 from stock_service.services import quote as quote_service
 
 mcp = FastMCP(
@@ -134,8 +133,11 @@ def get_financial(
     Args:
         code: 股票代码（带交易所后缀），如 "000001.SZ"（平安银行）
         report_type: 报表类型 - "income"(利润表)、"balance_sheet"(资产负债表)、"cashflow"(现金流量表)、"indicator"(财务指标)、"forecast"(业绩预告)、"express"(业绩快报)、"dividend"(分红送股)、"audit"(审计意见)、"main_business"(主营业务构成)、"disclosure"(财报披露计划)
-        start_period: 起始报告期，YYYYMMDD 格式，如 "20230101"
-        end_period: 截止报告期，YYYYMMDD 格式，如 "20231231"
+        start_period: 起始**报告期**（不是公告日期），YYYYMMDD 格式，如 "20230101"
+        end_period: 截止**报告期**（不是公告日期），YYYYMMDD 格式，如 "20231231"
+
+    注意：区间按报告期过滤，与公告日期无关，因此报告期在区间内的最新一期
+    即使公告日晚于 `end_period` 也会返回。
     """
     result = finance_service.get_financial(
         code,
@@ -157,7 +159,8 @@ def get_technical(
     5日/20日量比、5日/20日涨跌幅、区间高低点及百分位、从高点回撤幅度、连续下跌天数。
 
     顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），与 `index_valuation_percentile.as_of` 对齐，
-    供 consumer 检测 stale。当上游序列为空时 as_of 为 null。
+    供 consumer 检测 stale；`stale_days` 是 as_of 与调用日的自然日差，明显大于 0
+    （如 > 3）说明该标的数据陈旧/缺失，技术面不可判。当上游序列为空时 as_of 为 null。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）
@@ -175,7 +178,8 @@ def get_technical_batch(
     """[tushare] 批量查询多个股票/基金/指数的技术指标。
 
     一次性获取多个标的的 MA、量能、涨跌幅、高低点等技术指标，减少多次调用开销。
-    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null。
+    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null；
+    `stale_days` 是 as_of 与调用日的自然日差，明显大于 0（如 > 3）说明数据陈旧/缺失。
 
     Args:
         codes: 证券代码列表，如 ["000001.SH", "399001.SZ", "399006.SZ"]
@@ -191,9 +195,16 @@ def get_percentile_batch(
 ) -> str:
     """[tushare] 批量查询多个股票/基金/指数当前价格在历史区间中的百分位。
 
-    一次性获取多个标的在 6个月/1年/2年/3年四个时间窗口的价格百分位（0-100），减少多次调用开销。
-    股票还会额外返回 PE-TTM 百分位和 PB 百分位（过滤掉负值后计算），基金/指数不返回。
-    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null。
+    一次性获取多个标的在 6个月/1年/2年/3年四个时间窗口的**价格**百分位（0-100），
+    字段名 `price_percentile`（越低表示当前价格越接近历史低位）。使用前复权价格计算。
+    股票还会额外返回 PE-TTM 百分位（`pe_ttm_percentile`）和 PB 百分位（`pb_percentile`），
+    基金/指数不返回 —— 注意 **`price_percentile` 是价格分位，不能用来判断估值高低**。
+
+    PE/PB 的当前值（`current_pe_ttm`/`current_pb`）取自序列末日 daily_basic，
+    **不随窗口重算**，只有对应的百分位随窗口变化。
+
+    每个 item 的 `as_of` 是序列最末日（YYYYMMDD），`stale_days` 是它与调用日的
+    自然日差；`stale_days` 明显大于 0（如 > 3）说明该标的数据陈旧，分位不可用。
 
     Args:
         codes: 证券代码列表，如 ["510300.SH", "510500.SH", "512010.SH"]
@@ -208,12 +219,17 @@ def get_percentile(
 ) -> str:
     """[tushare] 查询股票/基金/指数当前价格在历史区间中的百分位。
 
-    返回最近 6 个月、1 年、2 年、3 年四个时间窗口的价格百分位（0-100），
-    百分位越低表示当前价格越接近历史低位。使用前复权价格计算。
-    股票还会额外返回 PE-TTM 百分位和 PB 百分位（过滤掉负值后计算），基金/指数不返回。
+    返回最近 6 个月、1 年、2 年、3 年四个时间窗口的**价格**百分位（0-100），
+    字段名 `price_percentile`，越低表示当前价格越接近历史低位。使用前复权价格计算。
+    股票还会额外返回 PE-TTM 百分位（`pe_ttm_percentile`）和 PB 百分位（`pb_percentile`），
+    基金/指数不返回 —— 注意 **`price_percentile` 是价格分位，不能用来判断估值高低**。
+    两者可能给出相反结论（如长江电力曾出现价格分位 91 而 PE-TTM 分位 15）。
 
-    顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），与 `index_valuation_percentile.as_of` 对齐，
-    供 consumer 检测 stale。当上游序列为空时 as_of 为 null。
+    PE/PB 的当前值（`current_pe_ttm`/`current_pb`）取自序列末日 daily_basic，
+    **不随窗口重算**，只有对应的百分位随窗口变化。
+
+    `as_of` 是序列最末日（YYYYMMDD），`stale_days` 是它与调用日的自然日差；
+    `stale_days` 明显大于 0（如 > 3）说明该标的数据陈旧，分位不可用。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）
@@ -451,24 +467,6 @@ def get_reverse_repo_rate(
     """
     result = quote_service.get_reverse_repo_quotes(codes=codes)
     return _to_json(result)
-
-
-@mcp.tool()
-async def search_news(
-    keywords: list[str],
-) -> str:
-    """搜索行业实时新闻并返回 AI 总结。
-
-    数据源：阿里云百炼 WebSearch。
-
-    输入行业关键词列表，通过大模型联网搜索最近一周的重要新闻，
-    返回每个行业的新闻摘要（关键事件、政策变化、市场影响）。
-
-    Args:
-        keywords: 行业关键词列表，如 ["半导体", "新能源车", "医药"]
-    """
-    items = await news_service.search_news(keywords)
-    return _to_json(items)
 
 
 @mcp.tool()

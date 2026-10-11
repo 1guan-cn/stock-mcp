@@ -1,6 +1,7 @@
 from psycopg.rows import dict_row
 
 from stock_service.database import get_pool
+from stock_service.models import DataType
 from stock_service.models.quote import DailyBar
 
 # ── 股票日线 ──
@@ -200,33 +201,46 @@ def save_adj_factors(symbol: str, factors: dict[str, float]) -> None:
         conn.commit()
 
 
-# ── Coverage ──
+# ── 数据跨度（缓存事实来源）──
 
-def get_coverage(symbol: str, data_type: str = "daily") -> tuple[str, str] | None:
-    with get_pool().connection() as conn:
-        row = conn.execute(
-            "SELECT min_date, max_date FROM data_coverage "
-            "WHERE symbol = %s AND data_type = %s",
-            (symbol, data_type),
-        ).fetchone()
-    if row is None:
-        return None
-    return (row[0], row[1])
+# data_type → (表名, 日期列名, 是否按 symbol 过滤)
+_SPAN_SOURCES: dict[str, tuple[str, str, bool]] = {
+    DataType.STOCK_DAILY: ("stock_daily_bar", "date", True),
+    DataType.FUND_DAILY: ("fund_daily_bar", "date", True),
+    DataType.INDEX_DAILY: ("index_daily_bar", "date", True),
+    DataType.ADJ_FACTOR: ("adj_factor", "date", True),
+    DataType.INDEX_VALUATION: ("index_valuation", "date", True),
+    DataType.FUND_FLOW: ("fund_flow", "date", True),
+    DataType.ETF_SUBSCRIPTION: ("etf_subscription", "date", True),
+    DataType.MARGIN: ("margin_detail", "date", True),
+    DataType.NORTHBOUND: ("northbound_flow", "date", False),
+}
 
 
-def update_coverage(
-    symbol: str, min_date: str, max_date: str, data_type: str = "daily"
-) -> None:
-    with get_pool().connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO data_coverage (symbol, data_type, min_date, max_date)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (symbol, data_type) DO UPDATE SET
-                min_date = LEAST(data_coverage.min_date, EXCLUDED.min_date),
-                max_date = GREATEST(data_coverage.max_date, EXCLUDED.max_date),
-                updated_at = NOW()
-            """,
-            (symbol, data_type, min_date, max_date),
+def get_data_span(symbol: str, data_type: str) -> tuple[str, str] | None:
+    """返回 DB 里**实际存在**的 (最早日期, 最晚日期)，无数据时返回 None。
+
+    这是增量缓存的唯一事实来源：不再单独维护水位线表。水位线一旦与真实数据
+    脱节（例如按「请求区间」而非「实际拿到」推进），缺口就会被永久判成
+    「已覆盖」，此后静默返回残缺 / 过期的序列。
+    """
+    if data_type.startswith("finance_"):
+        table, column = "financial_report", "period"
+        sql = (
+            f"SELECT MIN({column}), MAX({column}) FROM {table} "
+            "WHERE symbol = %s AND report_type = %s"
         )
-        conn.commit()
+        params: tuple = (symbol, data_type.removeprefix("finance_"))
+    else:
+        table, column, by_symbol = _SPAN_SOURCES[data_type]
+        sql = f"SELECT MIN({column}), MAX({column}) FROM {table}"
+        params = ()
+        if by_symbol:
+            sql += " WHERE symbol = %s"
+            params = (symbol,)
+
+    with get_pool().connection() as conn:
+        row = conn.execute(sql, params).fetchone()
+    if row is None or row[0] is None or row[1] is None:
+        return None
+    return (str(row[0]), str(row[1]))

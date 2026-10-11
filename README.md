@@ -42,7 +42,7 @@ MCP 客户端直接连接 `/mcp`，不再使用旧的 `/mcp/sse` 和 `/mcp/messa
 ## MCP 工具数据源标记
 
 MCP tool 描述中带 `[tushare]` 的工具表示该工具的正式数据路径由 Tushare 支撑。
-混合源或非 Tushare 工具不会带这个标记，并会在描述中说明实际来源（例如腾讯财经、东方财富、AKShare 或百炼）。
+混合源或非 Tushare 工具不会带这个标记，并会在描述中说明实际来源（例如腾讯财经、东方财富或 AKShare）。
 
 ## 测试
 
@@ -56,10 +56,7 @@ uv run pytest
 - `DATABASE_URL`
 - `HOST`
 - `PORT`
-- `AI_BASE_URL`
-- `AI_API_KEY`
-- `AI_MODEL`
-- `DASHSCOPE_API_KEY`
+- `TUSHARE_BASE_URL`（可选，自建 tushare 代理）
 
 ## License
 
