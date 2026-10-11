@@ -277,6 +277,11 @@ def get_factor(
     - fund_flow: 主力净流入（净额/占比）、超大单/大单净流入、近5日累计
     - northbound: 北向资金当日净买入、近5日累计
 
+    **股息率口径**：`valuation.dividend_yield` 是**自算 TTM**（近 365 天已实施派息
+    之和 ÷ 序列末日收盘价），并附 `dividend_per_share_ttm` 供核对。不用 tushare
+    daily_basic 的 dv_ttm —— 它按除息事件阶梯式累加，半年派息标的在两次除息之间
+    会系统性低估约一半（实测中国移动 600941：2.26% vs 真实约 4.8%）。
+
     **字段契约**：
     - `valuation` / `fund_flow` 块**始终存在**（不再出现「整块消失」）。取不到值时
       块内给 `unsupported_reason`：

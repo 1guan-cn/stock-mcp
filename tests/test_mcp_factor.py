@@ -49,6 +49,38 @@ def test_factor_valuation_does_not_depend_on_warm_cache():
     assert data["valuation"].get("data_as_of") is not None
 
 
+def test_dividend_yield_is_ttm_not_single_payment():
+    """半年派息标的的股息率必须反映连续两期派息，不能只算最近一次。
+
+    消费侧 ISSUE-3：中国移动 600941 曾返回 2.26%（= 单次末期股息 2.2012 元），
+    真实 TTM 约 4.8%（2.2012 + 2.51 = 4.71 元）。根因是直接用了 tushare
+    daily_basic 的 dv_ttm，它按除息事件阶梯式累加。
+    """
+    data = json.loads(get_factor("600941.SH"))
+    valuation = data["valuation"]
+    per_share = valuation.get("dividend_per_share_ttm")
+    assert per_share is not None, f"缺 dividend_per_share_ttm: {valuation}"
+    assert per_share > 4.0, f"只取了一次派息，疑似退回单次口径: {per_share}"
+    assert valuation.get("dividend_yield") is not None
+
+    # 同一参考日应稳定：2026-09-25 时点消费侧独立核算为 4.70 元
+    from stock_service.data.factor import _dividend_ttm_per_share
+
+    per_share_0925 = _dividend_ttm_per_share("600941.SH", "20260925")
+    assert per_share_0925 is not None and 4.0 < per_share_0925 < 5.0, (
+        f"2026-09-25 时点的 TTM 应为约 4.70 元，实际 {per_share_0925}"
+    )
+
+
+def test_dividend_yield_annual_payer_not_double_counted():
+    """年度/半年派息标的不能把上一期重复计入（固定 365 天窗口的错法）。"""
+    from stock_service.data.factor import _dividend_ttm_per_share
+
+    # 招商银行半年派息，近 12 个月两期合计 2.016 元；重复计入会接近 4.0
+    per_share = _dividend_ttm_per_share("600036.SH", "20261009")
+    assert per_share is not None and 1.5 < per_share < 2.5, f"疑似重复计入上一期: {per_share}"
+
+
 def test_factor_blocks_always_present_with_reason():
     """取不到时不删块，块内给 unsupported_reason。"""
     # ETF：无大单分类口径

@@ -6,7 +6,11 @@ from stock_service.models import AssetType, UnsupportedReason
 class ValuationData(BaseModel):
     pe_ttm: float | None = None
     pb: float | None = None
+    # 自算 TTM 股息率（%）= 近 365 天已实施派息之和 / 序列末日收盘价。
+    # 不用 daily_basic.dv_ttm：它对半年派息标的是按除息事件阶梯式累加，两次除息
+    # 之间会系统性低估约一半（实测中国移动 600941：2.26% vs 真实约 4.8%）。
     dividend_yield: float | None = None
+    dividend_per_share_ttm: float | None = None  # 近 365 天已实施派息每股合计（税前，元），供核对
     data_as_of: str | None = None          # 估值数据实际日期（YYYYMMDD），取自序列末日
     stale_days: int | None = None          # 自然日差：今天 - data_as_of
     # 该块**始终存在**：取不到值时显式给原因，而不是让字段从返回体里消失
