@@ -10,7 +10,6 @@ from stock_service.data._registry import resolve_etf_to_index
 from stock_service.data.adapters import akshare as ak
 from stock_service.data.adapters import tushare as ts
 from stock_service.data.store import factor as factor_store
-from stock_service.data.store import quote as quote_store
 from stock_service.models import AssetType, DataType, FinanceReportType, UnsupportedReason
 from stock_service.models.factor import ValuationData
 
