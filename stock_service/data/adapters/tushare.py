@@ -424,6 +424,10 @@ def get_financial(symbol: str, report_type: str) -> list[dict]:
     if df is None or df.empty:
         return []
 
+    # 上游会返回字段完全相同的重复行（实测 fina_indicator 有 44 期是两行、107 个字段
+    # 零差异），先做整行去重。
+    df = df.drop_duplicates()
+
     # income / balancesheet / cashflow 同一报告期会返回「更新前(update_flag=0)」和
     # 「更新后(1)」两行。按标记升序排列后每期只留最后一行，即更新后的版本；
     # 直接按 update_flag 过滤会丢掉大量只有旧标记的历史期（实测 000001.SZ

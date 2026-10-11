@@ -405,6 +405,28 @@ MIGRATIONS: list[dict] = [
             );
         """,
     },
+    {
+        "version": 12,
+        "name": "financial_report_add_row_key",
+        "up": """
+            -- 主键加上 row_key：main_business / dividend 同一报告期有多行
+            -- （bz_item / div_proc），旧主键 (symbol, report_type, period) 会让它们
+            -- 互相覆盖、只剩最后写入的一行。
+            ALTER TABLE financial_report ADD COLUMN IF NOT EXISTS row_key TEXT NOT NULL DEFAULT '';
+            ALTER TABLE financial_report DROP CONSTRAINT IF EXISTS financial_report_pkey;
+            ALTER TABLE financial_report ADD PRIMARY KEY (symbol, report_type, period, row_key);
+
+            -- 旧主键压扁后的 main_business / dividend 存量行是残缺的（一期只剩一行），
+            -- 与真实记录不符；删除后由新的缓存逻辑按需重拉。
+            DELETE FROM financial_report WHERE report_type IN ('main_business', 'dividend');
+        """,
+        "down": """
+            ALTER TABLE financial_report DROP CONSTRAINT IF EXISTS financial_report_pkey;
+            DELETE FROM financial_report WHERE row_key <> '';
+            ALTER TABLE financial_report ADD PRIMARY KEY (symbol, report_type, period);
+            ALTER TABLE financial_report DROP COLUMN IF EXISTS row_key;
+        """,
+    },
 ]
 
 
