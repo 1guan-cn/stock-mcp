@@ -17,6 +17,7 @@ from stock_service.models.factor import (
     MainForceFlowData,
     MainForceFlowItem,
     NorthboundData,
+    ValuationData,
     ValuationPercentileItem,
 )
 from stock_service.services._utils import calc_percentile
@@ -26,33 +27,40 @@ logger = logging.getLogger(__name__)
 _MAX_WORKERS = 8
 
 
-def _build_fund_flow(symbol: str, asset_type: str) -> FundFlowData | None:
-    """从 data 层获取资金流并组装。仅 A 股个股有主力资金数据。"""
+def _build_fund_flow(symbol: str, asset_type: str) -> FundFlowData:
+    """从 data 层获取资金流并组装。**始终返回对象**，取不到时带 unsupported_reason。
+
+    仅 A 股个股有主力资金口径：ETF 做市商撮合不适用大单分类、指数无此口径，
+    都是「不适用」而非「这次没给」，必须让消费者能区分。
+    """
+    if asset_type == AssetType.FUND:
+        return FundFlowData(unsupported_reason=UnsupportedReason.ETF_NO_MAIN_FORCE_DATA)
     if asset_type != AssetType.STOCK:
-        return None
+        return FundFlowData(unsupported_reason=UnsupportedReason.INDEX_NOT_SUPPORTED)
 
     try:
         rows = factor_data.get_fund_flow(symbol)
-        if not rows:
-            return None
-
-        latest = rows[-1]
-        recent_5d = rows[-5:]
-        recent_5d_main = sum(r.get("main_force_net", 0) or 0 for r in recent_5d)
-        data_date = latest.get("date")
-
-        return FundFlowData(
-            main_force_net=latest.get("main_force_net"),
-            main_force_ratio=latest.get("main_force_ratio"),
-            super_large_net=latest.get("super_large_net"),
-            large_net=latest.get("large_net"),
-            recent_5d_main_force=round(recent_5d_main, 2),
-            data_as_of=data_date,
-            stale_days=stale_days(data_date),
-        )
     except Exception as e:
         logger.warning("_build_fund_flow(%s) failed: %s", symbol, e)
-        return None
+        return FundFlowData(unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE)
+
+    if not rows:
+        return FundFlowData(unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE)
+
+    latest = rows[-1]
+    recent_5d = rows[-5:]
+    recent_5d_main = sum(r.get("main_force_net", 0) or 0 for r in recent_5d)
+    data_date = latest.get("date")
+
+    return FundFlowData(
+        main_force_net=latest.get("main_force_net"),
+        main_force_ratio=latest.get("main_force_ratio"),
+        super_large_net=latest.get("super_large_net"),
+        large_net=latest.get("large_net"),
+        recent_5d_main_force=round(recent_5d_main, 2),
+        data_as_of=data_date,
+        stale_days=stale_days(data_date),
+    )
 
 
 def _build_northbound() -> NorthboundData | None:
@@ -78,15 +86,31 @@ def _build_northbound() -> NorthboundData | None:
         return None
 
 
+def _fill_stale(valuation: ValuationData) -> ValuationData:
+    """估值块补 stale_days（data 层只负责给数据与 data_as_of）。"""
+    if not valuation.data_as_of:
+        return valuation
+    return valuation.model_copy(update={"stale_days": stale_days(valuation.data_as_of)})
+
+
+def _actual_as_of(*blocks) -> str | None:
+    """顶层 as_of = 各因子块里最新的实际数据日期；全无数据时 None。"""
+    dates = [b.data_as_of for b in blocks if b is not None and getattr(b, "data_as_of", None)]
+    return max(dates) if dates else None
+
+
 def get_factor(
     code: str,
     date: str | None = None,
 ) -> FactorItem:
     listing_data.ensure_data()
+    requested = date or today_str()
     symbols = listing_data.resolve_symbols(code=code)
     if not symbols:
         return FactorItem(
-            code=code, name="", asset_type=AssetType.STOCK, as_of=date or today_str()
+            code=code, name="", asset_type=AssetType.STOCK,
+            requested_date=requested,
+            unsupported_reason=UnsupportedReason.SYMBOL_NOT_FOUND,
         )
     symbol, name, asset_type = symbols[0]
     asset = AssetType(asset_type)
@@ -96,7 +120,7 @@ def get_factor(
         f_flow = executor.submit(_build_fund_flow, symbol, asset)
         f_north = executor.submit(_build_northbound)
 
-        valuation = f_val.result()
+        valuation = _fill_stale(f_val.result())
         fund_flow = f_flow.result()
         northbound = f_north.result()
 
@@ -104,7 +128,8 @@ def get_factor(
         code=symbol,
         name=name,
         asset_type=asset,
-        as_of=date or today_str(),
+        as_of=_actual_as_of(valuation, fund_flow, northbound),
+        requested_date=requested,
         valuation=valuation,
         fund_flow=fund_flow,
         northbound=northbound,
@@ -363,18 +388,19 @@ def get_factor_batch(
     for code in codes:
         all_symbols.extend(listing_data.resolve_symbols(code=code))
 
-    as_of = date or today_str()
+    requested = date or today_str()
     northbound = _build_northbound()
 
     def _build_item(symbol: str, name: str, asset_type_str: str) -> FactorItem:
         asset = AssetType(asset_type_str)
-        valuation = factor_data.get_valuation(symbol, asset)
+        valuation = _fill_stale(factor_data.get_valuation(symbol, asset))
         fund_flow = _build_fund_flow(symbol, asset)
         return FactorItem(
             code=symbol,
             name=name,
             asset_type=asset,
-            as_of=as_of,
+            as_of=_actual_as_of(valuation, fund_flow, northbound),
+            requested_date=requested,
             valuation=valuation,
             fund_flow=fund_flow,
             northbound=northbound,

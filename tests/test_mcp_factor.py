@@ -3,6 +3,7 @@ index_valuation_percentile / commodity_price_percentile 契约测试。"""
 
 import json
 
+from stock_service.database import get_pool
 from stock_service.mcp_server import (
     commodity_price_percentile,
     etf_fund_flow,
@@ -16,13 +17,52 @@ from stock_service.mcp_server import (
 # ── get_factor ──
 
 def test_factor_stock():
-    """股票多因子。"""
+    """股票多因子：因子块与 as_of 语义契约。"""
     data = json.loads(get_factor("000001.SZ"))
-    for key in ("code", "name", "asset_type", "as_of"):
-        assert key in data
+    for key in (
+        "code", "name", "asset_type", "as_of", "requested_date",
+        "valuation", "fund_flow",
+    ):
+        assert key in data, f"缺少字段: {key}"
     assert data["asset_type"] == "stock"
-    assert "valuation" in data
-    assert "fund_flow" in data
+    assert data["valuation"].get("pe_ttm") is not None
+    assert data["valuation"].get("unsupported_reason") is None
+    # as_of = 实际数据日期（某个因子块的 data_as_of），不是调用意图日期
+    data_dates = {
+        block.get("data_as_of")
+        for block in (data.get("valuation"), data.get("fund_flow"), data.get("northbound"))
+        if block and block.get("data_as_of")
+    }
+    assert data["as_of"] in data_dates, f"as_of={data['as_of']} 不在各因子块数据日期 {data_dates} 内"
+
+
+def test_factor_valuation_does_not_depend_on_warm_cache():
+    """估值必须按需拉取，不能只读本地缓存 —— 否则冷启动/行情窗口外会静默返回
+    「没有估值」，且下游无法区分是标的没数据还是这次没给。"""
+    with get_pool().connection() as conn:
+        conn.execute("DELETE FROM stock_daily_bar WHERE symbol = '000001.SZ'")
+        conn.commit()
+
+    data = json.loads(get_factor("000001.SZ"))
+    assert "valuation" in data, "冷缓存下 valuation 块整个消失"
+    assert data["valuation"].get("pe_ttm") is not None, f"冷缓存下取不到估值: {data['valuation']}"
+    assert data["valuation"].get("data_as_of") is not None
+
+
+def test_factor_blocks_always_present_with_reason():
+    """取不到时不删块，块内给 unsupported_reason。"""
+    # ETF：无大单分类口径
+    data = json.loads(get_factor("510300.SH"))
+    assert data["fund_flow"]["unsupported_reason"] == "etf_no_main_force_data"
+
+    # 指数：无主力资金口径
+    data = json.loads(get_factor("000001.SH"))
+    assert data["fund_flow"]["unsupported_reason"] == "index_not_supported"
+
+    # 不在 _registry 内的 ETF：估值块必须存在并说明原因
+    data = json.loads(get_factor("560800.SH"))
+    assert "valuation" in data, "valuation 块整个消失"
+    assert data["valuation"]["unsupported_reason"] == "index_not_in_registry"
 
 
 def test_factor_etf():

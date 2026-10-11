@@ -252,10 +252,22 @@ def get_factor(
     - fund_flow: 主力净流入（净额/占比）、超大单/大单净流入、近5日累计
     - northbound: 北向资金当日净买入、近5日累计
 
-    覆盖说明：
-    - 主力资金（fund_flow）**仅 A 股个股**有数据，ETF / 指数固定返回 null
-    - 顶层 as_of = 调用意图日期；子结构的 data_as_of = 实际数据日期
-    - 子结构携带 stale_days（自然日），>1 通常意味着上游数据陈旧
+    **字段契约**：
+    - `valuation` / `fund_flow` 块**始终存在**（不再出现「整块消失」）。取不到值时
+      块内给 `unsupported_reason`：
+        - `etf_no_main_force_data`（ETF 无大单分类口径）
+        - `index_not_supported`（指数无此口径）
+        - `not_etf` / `index_not_in_registry`（估值需映射到跟踪指数但不在映射表内）
+        - `index_data_unavailable`（上游套餐不含该指数估值）
+        - `data_unavailable`（标的口径适用，但上游这段时间没有数据）
+    - 顶层 `unsupported_reason` 只表示**标的解析不到**（`symbol_not_found`）
+    - `as_of` = **实际数据日期**（各因子块里最新的 data_as_of），全库统一语义；
+      调用意图日期看 `requested_date`
+    - 各块内 `data_as_of` 是该块自己的数据日期，`stale_days` 是它与调用日的自然
+      日差（>1 通常意味着上游数据陈旧）
+
+    估值百分位请用 get_percentile；指数/ETF 的 PE-PB 3 年分位请用
+    index_valuation_percentile。
 
     Args:
         code: 证券代码（带交易所后缀），如 "510300.SH"（沪深300ETF）、"000001.SZ"（平安银行）、"000300.SH"（沪深300指数）
@@ -275,6 +287,9 @@ def get_factor_batch(
     数据源混合：估值与 A 股主力资金来自 Tushare，北向资金来自 AKShare。
 
     一次性获取多个标的的估值（当前值）、资金流、北向资金因子，减少多次调用开销。
+    字段契约与 get_factor 一致：`valuation` / `fund_flow` 块始终存在，取不到值时块内
+    带 `unsupported_reason`；item 的 `as_of` = 实际数据日期，`requested_date` = 调用
+    意图日期。
     估值百分位请用 get_percentile_batch。
 
     Args:

@@ -40,6 +40,7 @@ class UnsupportedReason(StrEnum):
     SYMBOL_NOT_FOUND = "symbol_not_found"
     INDEX_NOT_IN_REGISTRY = "index_not_in_registry"
     INDEX_DATA_UNAVAILABLE = "index_data_unavailable"
+    DATA_UNAVAILABLE = "data_unavailable"  # 该标的适用此口径，但上游这段时间没有数据
 
 
 class FinanceReportType(StrEnum):

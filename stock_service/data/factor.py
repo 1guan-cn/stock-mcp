@@ -2,45 +2,44 @@
 
 import logging
 
+from stock_service.data import quote as quote_data
 from stock_service.data._cache import fetch_with_cache, n_days_ago_str, today_str
 from stock_service.data._registry import resolve_etf_to_index
 from stock_service.data.adapters import akshare as ak
 from stock_service.data.adapters import tushare as ts
 from stock_service.data.store import factor as factor_store
 from stock_service.data.store import quote as quote_store
-from stock_service.models import AssetType, DataType
+from stock_service.models import AssetType, DataType, UnsupportedReason
 from stock_service.models.factor import ValuationData
 
 logger = logging.getLogger(__name__)
 
+# 个股估值取的日线窗口：够长以覆盖停牌/长期无成交的标的（取窗口内最后一根 K 线）
+_STOCK_VALUATION_WINDOW_DAYS = 90
+
 
 # ── 估值 ──
 
-def get_stock_valuation(symbol: str) -> ValuationData | None:
-    """从 stock_daily_bar 取最近记录的 pe_ttm/pb/股息率。"""
-    bars = quote_store.get_cached_stock_bars(symbol, n_days_ago_str(30), today_str())
+def get_stock_valuation(symbol: str) -> ValuationData:
+    """取个股最近一根 K 线的 pe_ttm / pb / 股息率。
+
+    走 data.quote 的带缓存取数（会按需补拉），不能只读本地缓存 —— 否则冷启动或
+    行情窗口外会静默返回「没有估值」，且下游无法区分是「标的没有数据」还是
+    「这次没给」。
+    """
+    bars = quote_data.get_daily(
+        symbol, AssetType.STOCK,
+        n_days_ago_str(_STOCK_VALUATION_WINDOW_DAYS), today_str(),
+    )
     if not bars:
-        return None
+        return ValuationData(unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE)
+
     latest = bars[-1]
     return ValuationData(
         pe_ttm=round(latest.pe_ttm, 2) if latest.pe_ttm else None,
         pb=round(latest.pb, 2) if latest.pb else None,
         dividend_yield=round(latest.dv_ttm, 2) if latest.dv_ttm else None,
-    )
-
-
-def get_index_valuation(index_symbol: str) -> ValuationData | None:
-    """获取指数估值（增量缓存）。"""
-    rows = get_index_valuation_history(index_symbol)
-    if not rows:
-        return None
-
-    latest = rows[-1]
-    pe_ttm = latest.get("pe_ttm")
-    pb = latest.get("pb")
-    return ValuationData(
-        pe_ttm=round(pe_ttm, 2) if pe_ttm else None,
-        pb=round(pb, 2) if pb else None,
+        data_as_of=latest.date,
     )
 
 
@@ -57,8 +56,8 @@ def get_index_valuation_history(index_symbol: str) -> list[dict]:
     )
 
 
-def get_valuation(symbol: str, asset_type: str) -> ValuationData | None:
-    """统一入口：根据 asset_type 获取估值。"""
+def get_valuation(symbol: str, asset_type: str) -> ValuationData:
+    """统一入口：根据 asset_type 获取估值。**始终返回对象**，取不到时带 unsupported_reason。"""
     try:
         if asset_type == AssetType.STOCK:
             return get_stock_valuation(symbol)
@@ -67,12 +66,24 @@ def get_valuation(symbol: str, asset_type: str) -> ValuationData | None:
         if asset_type == AssetType.FUND:
             index_symbol = resolve_etf_to_index(symbol)
             if not index_symbol:
-                return None
+                return ValuationData(unsupported_reason=UnsupportedReason.INDEX_NOT_IN_REGISTRY)
 
-        return get_index_valuation(index_symbol)
+        rows = get_index_valuation_history(index_symbol)
+        if not rows:
+            return ValuationData(unsupported_reason=UnsupportedReason.INDEX_DATA_UNAVAILABLE)
+
+        latest = rows[-1]
+        pe_ttm = latest.get("pe_ttm")
+        pb = latest.get("pb")
+        data_date = latest.get("date")
+        return ValuationData(
+            pe_ttm=round(pe_ttm, 2) if pe_ttm else None,
+            pb=round(pb, 2) if pb else None,
+            data_as_of=data_date,
+        )
     except Exception as e:
         logger.warning("get_valuation(%s) failed: %s", symbol, e)
-        return None
+        return ValuationData(unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE)
 
 
 # ── 资金流 ──

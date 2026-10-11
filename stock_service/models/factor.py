@@ -7,6 +7,10 @@ class ValuationData(BaseModel):
     pe_ttm: float | None = None
     pb: float | None = None
     dividend_yield: float | None = None
+    data_as_of: str | None = None          # 估值数据实际日期（YYYYMMDD），取自序列末日
+    stale_days: int | None = None          # 自然日差：今天 - data_as_of
+    # 该块**始终存在**：取不到值时显式给原因，而不是让字段从返回体里消失
+    unsupported_reason: UnsupportedReason | None = None
 
 
 class FundFlowData(BaseModel):
@@ -17,6 +21,8 @@ class FundFlowData(BaseModel):
     recent_5d_main_force: float | None = None
     data_as_of: str | None = None          # 数据真实日期（YYYYMMDD），可能早于顶层 as_of
     stale_days: int | None = None          # 自然日差：今天 - data_as_of；>1 视为陈旧
+    # 该块**始终存在**：ETF/指数本就没有这个口径、或个股上游无数据时显式给原因
+    unsupported_reason: UnsupportedReason | None = None
 
 
 class NorthboundData(BaseModel):
@@ -30,10 +36,15 @@ class FactorItem(BaseModel):
     code: str
     name: str
     asset_type: AssetType
-    as_of: str
+    # 顶层 as_of = **实际数据日期**（估值/资金流/北向里最新的 data_as_of），
+    # 全库统一语义；调用意图日期看 requested_date。
+    as_of: str | None = None
+    requested_date: str | None = None      # 调用方意图日期（入参 date 或今天），非数据日期
     valuation: ValuationData | None = None
     fund_flow: FundFlowData | None = None
     northbound: NorthboundData | None = None
+    # 仅在**标的本身解析不到**时填（symbol_not_found）；各因子块缺失的原因在块内
+    unsupported_reason: UnsupportedReason | None = None
 
 
 class FactorResponse(BaseModel):
