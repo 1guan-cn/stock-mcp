@@ -35,7 +35,7 @@ class NorthboundData(BaseModel):
 class FactorItem(BaseModel):
     code: str
     name: str
-    asset_type: AssetType
+    asset_type: AssetType | None = None    # 标的解析不到时为 None
     # 顶层 as_of = **实际数据日期**（估值/资金流/北向里最新的 data_as_of），
     # 全库统一语义；调用意图日期看 requested_date。
     as_of: str | None = None

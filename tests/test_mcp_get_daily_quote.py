@@ -67,6 +67,27 @@ def test_adjust_none():
 
 
 def test_empty_range():
-    """查询周末范围，bars 应为空列表。"""
+    """区间内无交易日时 bars 为空，且必须显式说明原因。"""
     data = _parse(get_daily_quote("000001.SZ", "20250104", "20250105"))
-    assert data["items"][0]["bars"] == []
+    item = data["items"][0]
+    assert item["bars"] == []
+    assert item["unsupported_reason"] == "data_unavailable"
+
+
+def test_overseas_daily_reports_asset_type_not_supported():
+    """港股没有日线口径，要显式说明，而不是返回 {"total": 0, "items": []}。"""
+    data = _parse(get_daily_quote("01810.HK", "20260101", "20260110"))
+    assert data["total"] == 1, "取不到数据时不应静默返回空数组"
+    item = data["items"][0]
+    assert item["symbol"] == "01810.HK"
+    assert item["asset_type"] == "hk"
+    assert item["unsupported_reason"] == "asset_type_not_supported"
+
+
+def test_unknown_symbol_reports_symbol_not_found():
+    """代码解析不到与「资产类型不支持」是两回事，原因要能区分。"""
+    data = _parse(get_daily_quote("AAAA.XX", "20260101", "20260110"))
+    assert data["total"] == 1
+    item = data["items"][0]
+    assert item["unsupported_reason"] == "symbol_not_found"
+    assert item.get("asset_type") is None

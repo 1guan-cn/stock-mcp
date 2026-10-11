@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from stock_service.data import listing as listing_data
 from stock_service.data import quote as quote_data
 from stock_service.services._utils import CST, calc_percentile, stale_days
-from stock_service.models import AdjustType, AssetType, DetailLevel
+from stock_service.models import AdjustType, AssetType, DetailLevel, UnsupportedReason
 from stock_service.models.quote import (
     SIMPLE_FIELDS,
     BidAsk,
@@ -92,7 +92,37 @@ def _get_single_daily(
         asset_type=asset_type,
         adjust=adjust,
         bars=all_bars,
+        unsupported_reason=None if all_bars else UnsupportedReason.DATA_UNAVAILABLE,
     )
+
+
+def _unsupported_item(code: str, name: str = "") -> tuple[str, str, str | None, UnsupportedReason]:
+    """解析不到标的时，给出可读的失败原因。
+
+    日线/技术指标只覆盖 A 股/ETF/指数；港股/美股/全球指数不是「代码写错」，而是
+    「该资产类型不支持这条口径」，两者必须区分开。
+    """
+    overseas = _resolve_overseas(code)
+    if overseas:
+        return code, name, overseas[2], UnsupportedReason.ASSET_TYPE_NOT_SUPPORTED
+    return code, name, None, UnsupportedReason.SYMBOL_NOT_FOUND
+
+
+def _resolve_or_placeholder(codes: list[str]) -> list[tuple[str, str, str | None, UnsupportedReason | None]]:
+    """把请求的 codes 展开成 (symbol, name, asset_type, unsupported_reason)。
+
+    每个请求的 code **至少产出一条**：解析不到时产占位项（带原因），不静默丢弃 ——
+    否则消费者不主动数 total 就发现不了少拿了标的。
+    """
+    listing_data.ensure_data()
+    tasks: list[tuple[str, str, str | None, UnsupportedReason | None]] = []
+    for code in codes:
+        resolved = listing_data.resolve_symbols(code=code)
+        if not resolved:
+            tasks.append(_unsupported_item(code))
+        else:
+            tasks.extend((symbol, name, asset_type, None) for symbol, name, asset_type in resolved)
+    return tasks
 
 
 def get_daily(
@@ -107,6 +137,20 @@ def get_daily(
 ) -> DailyResponse:
     listing_data.ensure_data()
     symbols = listing_data.resolve_symbols(code=code, market=market, industry=industry)
+
+    if not symbols and code:
+        # 指定 code 却解析不到 → 显式失败，不能让 items 变成空数组被当成「查到了但没数据」
+        symbol, name, asset_type, reason = _unsupported_item(code)
+        return DailyResponse(
+            total=1,
+            items=[
+                DailyItem(
+                    symbol=symbol, name=name,
+                    asset_type=AssetType(asset_type) if asset_type else None,
+                    adjust=adjust, bars=[], unsupported_reason=reason,
+                )
+            ],
+        )
 
     if len(symbols) <= 1:
         items = [
@@ -145,7 +189,15 @@ def _get_single_percentile(
     symbol: str,
     name: str,
     asset_type: AssetType,
+    unsupported_reason: UnsupportedReason | None = None,
 ) -> PercentileItem:
+    if asset_type is None or unsupported_reason is not None:
+        return PercentileItem(
+            symbol=symbol, name=name,
+            asset_type=asset_type, as_of=None, percentiles=[],
+            unsupported_reason=unsupported_reason,
+        )
+
     today = datetime.now(CST).strftime("%Y%m%d")
     start_date = (datetime.now(CST) - timedelta(days=_PERCENTILE_PERIODS[-1][1])).strftime("%Y%m%d")
 
@@ -164,6 +216,7 @@ def _get_single_percentile(
                 PercentileData(period=p, price_percentile=None, current_price=None, days=0)
                 for p, _ in _PERCENTILE_PERIODS
             ],
+            unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE,
         )
 
     current_price = bars[-1].close
@@ -229,46 +282,40 @@ def get_percentile(
     market: str | None = None,
     industry: str | None = None,
 ) -> PercentileResponse:
-    listing_data.ensure_data()
-    symbols = listing_data.resolve_symbols(code=code, market=market, industry=industry)
+    tasks = (
+        _resolve_or_placeholder([code]) if code
+        else [(s, n, a, None) for s, n, a in _resolve_filtered(market=market, industry=industry)]
+    )
 
-    if len(symbols) <= 1:
-        items = [
-            _get_single_percentile(symbol, name, AssetType(asset_type))
-            for symbol, name, asset_type in symbols
-        ]
+    if len(tasks) <= 1:
+        items = [_get_single_percentile(*_as_kwargs(t)) for t in tasks]
     else:
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-            futures = [
-                executor.submit(
-                    _get_single_percentile,
-                    symbol, name, AssetType(asset_type),
-                )
-                for symbol, name, asset_type in symbols
-            ]
+            futures = [executor.submit(_get_single_percentile, *_as_kwargs(t)) for t in tasks]
             items = [f.result() for f in futures]
 
     return PercentileResponse(total=len(items), items=items)
+
+
+def _resolve_filtered(*, market: str | None = None, industry: str | None = None):
+    """按 market/industry 筛选标的（无 code 时的批量语义，筛不到就是 0 条）。"""
+    listing_data.ensure_data()
+    return listing_data.resolve_symbols(market=market, industry=industry)
+
+
+def _as_kwargs(task: tuple[str, str, str | None, UnsupportedReason | None]):
+    symbol, name, asset_type, reason = task
+    return (symbol, name, AssetType(asset_type) if asset_type else None, reason)
 
 
 def get_percentile_batch(
     *,
     codes: list[str],
 ) -> PercentileResponse:
-    listing_data.ensure_data()
-
-    all_symbols: list[tuple[str, str, str]] = []
-    for code in codes:
-        all_symbols.extend(listing_data.resolve_symbols(code=code))
+    tasks = _resolve_or_placeholder(codes)
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-        futures = [
-            executor.submit(
-                _get_single_percentile,
-                symbol, name, AssetType(asset_type),
-            )
-            for symbol, name, asset_type in all_symbols
-        ]
+        futures = [executor.submit(_get_single_percentile, *_as_kwargs(t)) for t in tasks]
         items = [f.result() for f in futures]
 
     return PercentileResponse(total=len(items), items=items)
@@ -514,8 +561,15 @@ def _get_single_technical(
     symbol: str,
     name: str,
     asset_type: AssetType,
+    unsupported_reason: UnsupportedReason | None = None,
     period: int = 60,
 ) -> TechnicalItem:
+    if asset_type is None or unsupported_reason is not None:
+        return TechnicalItem(
+            symbol=symbol, name=name, asset_type=asset_type,
+            unsupported_reason=unsupported_reason,
+        )
+
     today = datetime.now(CST).strftime("%Y%m%d")
     total_days = period + 80
     start_date = (datetime.now(CST) - timedelta(days=total_days)).strftime("%Y%m%d")
@@ -525,9 +579,15 @@ def _get_single_technical(
         start_date, today, AdjustType.QFQ, DetailLevel.SIMPLE,
     )
 
-    technical = _calc_technical(daily_item.bars, period)
+    if not daily_item.bars:
+        return TechnicalItem(
+            symbol=symbol, name=name, asset_type=asset_type,
+            unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE,
+        )
 
-    as_of = daily_item.bars[-1].date if daily_item.bars else None
+    technical = _calc_technical(daily_item.bars, period)
+    as_of = daily_item.bars[-1].date
+
     return TechnicalItem(
         symbol=symbol,
         name=name,
@@ -543,12 +603,11 @@ def get_technical(
     code: str,
     period: int = 60,
 ) -> TechnicalResponse:
-    listing_data.ensure_data()
-    symbols = listing_data.resolve_symbols(code=code)
+    tasks = _resolve_or_placeholder([code])
 
     items = [
-        _get_single_technical(symbol, name, AssetType(asset_type), period)
-        for symbol, name, asset_type in symbols
+        _get_single_technical(*_as_kwargs(t), period)
+        for t in tasks
     ]
     return TechnicalResponse(total=len(items), items=items)
 
@@ -659,19 +718,12 @@ def get_technical_batch(
     codes: list[str],
     period: int = 60,
 ) -> TechnicalResponse:
-    listing_data.ensure_data()
-
-    all_symbols: list[tuple[str, str, str]] = []
-    for code in codes:
-        all_symbols.extend(listing_data.resolve_symbols(code=code))
+    tasks = _resolve_or_placeholder(codes)
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
         futures = [
-            executor.submit(
-                _get_single_technical,
-                symbol, name, AssetType(asset_type), period,
-            )
-            for symbol, name, asset_type in all_symbols
+            executor.submit(_get_single_technical, *_as_kwargs(t), period)
+            for t in tasks
         ]
         items = [f.result() for f in futures]
 

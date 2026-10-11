@@ -108,7 +108,7 @@ def get_factor(
     symbols = listing_data.resolve_symbols(code=code)
     if not symbols:
         return FactorItem(
-            code=code, name="", asset_type=AssetType.STOCK,
+            code=code, name="", asset_type=None,
             requested_date=requested,
             unsupported_reason=UnsupportedReason.SYMBOL_NOT_FOUND,
         )
@@ -384,10 +384,6 @@ def get_factor_batch(
 ) -> FactorResponse:
     listing_data.ensure_data()
 
-    all_symbols: list[tuple[str, str, str]] = []
-    for code in codes:
-        all_symbols.extend(listing_data.resolve_symbols(code=code))
-
     requested = date or today_str()
     northbound = _build_northbound()
 
@@ -406,11 +402,27 @@ def get_factor_batch(
             northbound=northbound,
         )
 
+    # 每个请求的 code 至少产出一条 item：解析不到时给占位项（symbol_not_found），
+    # 不静默丢弃 —— 否则消费者不主动数 total 就发现不了少拿了标的。
+    flat: list[tuple[tuple[str, str, str] | None, str]] = []
+    for code in codes:
+        resolved = listing_data.resolve_symbols(code=code)
+        if resolved:
+            flat.extend((r, code) for r in resolved)
+        else:
+            flat.append((None, code))  # 占位，保留原始 code 供报错
+
+    def _build_one(task: tuple[str, str, str] | None, code: str) -> FactorItem:
+        if task is None:
+            return FactorItem(
+                code=code, name="", asset_type=None, requested_date=requested,
+                unsupported_reason=UnsupportedReason.SYMBOL_NOT_FOUND,
+            )
+        symbol, name, asset_type_str = task
+        return _build_item(symbol, name, asset_type_str)
+
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-        futures = [
-            executor.submit(_build_item, symbol, name, asset_type)
-            for symbol, name, asset_type in all_symbols
-        ]
+        futures = [executor.submit(_build_one, t, c) for t, c in flat]
         items = [f.result() for f in futures]
 
     return FactorResponse(total=len(items), items=items)

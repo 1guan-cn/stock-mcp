@@ -54,6 +54,26 @@ def test_batch():
         assert code in symbols, f"缺少标的: {code}"
 
 
+def test_batch_does_not_silently_drop_unknown_code():
+    """不存在的代码必须占位返回并说明原因，total 反映请求数而非成功数。"""
+    codes = ["000001.SZ", "512400.SZ", "000768.SZ"]  # 512400 写了错后缀（实为 .SH）
+    data = _parse(get_technical_batch(codes))
+    assert data["total"] == len(codes), f"静默丢弃了标的: total={data['total']}"
+    bad = next(i for i in data["items"] if i["symbol"] == "512400.SZ")
+    assert bad["unsupported_reason"] == "symbol_not_found"
+
+
+def test_overseas_symbol_reports_asset_type_not_supported():
+    """港股/美股/全球指数无日线口径，要显式区分于「代码写错」。"""
+    data = _parse(get_technical("01810.HK"))
+    assert data["total"] == 1
+    item = data["items"][0]
+    assert item["asset_type"] == "hk"
+    assert item["unsupported_reason"] == "asset_type_not_supported"
+    assert item.get("technical") is None
+    assert item.get("as_of") is None
+
+
 def test_technical_as_of_present():
     """as_of 字段在序列非空时暴露序列最末日（YYYYMMDD）。"""
     data = _parse(get_technical("000001.SH"))

@@ -86,6 +86,16 @@ def test_factor_batch():
     assert data["total"] == 2
 
 
+def test_factor_batch_does_not_silently_drop_unknown_code():
+    """不存在的代码必须占位返回并说明原因，total 反映请求数。"""
+    codes = ["510300.SH", "512400.SZ"]
+    data = json.loads(get_factor_batch(codes))
+    assert data["total"] == len(codes)
+    bad = next(i for i in data["items"] if i["code"] == "512400.SZ")
+    assert bad["unsupported_reason"] == "symbol_not_found"
+    assert bad.get("asset_type") is None
+
+
 # ── etf_fund_flow ──
 
 def test_etf_fund_flow_ok():

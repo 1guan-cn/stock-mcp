@@ -53,6 +53,15 @@ def test_batch():
         assert code in symbols
 
 
+def test_batch_does_not_silently_drop_unknown_code():
+    """不存在的代码必须占位返回并说明原因，total 反映请求数。"""
+    codes = ["510300.SH", "512400.SZ"]
+    data = _parse(get_percentile_batch(codes))
+    assert data["total"] == len(codes)
+    bad = next(i for i in data["items"] if i["symbol"] == "512400.SZ")
+    assert bad["unsupported_reason"] == "symbol_not_found"
+
+
 def test_percentile_as_of_present():
     """as_of 字段在序列非空时暴露序列最末日（YYYYMMDD），并带 stale_days。"""
     data = _parse(get_percentile("000001.SH"))

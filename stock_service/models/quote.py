@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from stock_service.models import AdjustType, AssetType
+from stock_service.models import AdjustType, AssetType, UnsupportedReason
 
 
 class DailyBar(BaseModel):
@@ -42,13 +42,18 @@ SIMPLE_FIELDS = {
 class DailyItem(BaseModel):
     symbol: str
     name: str
-    asset_type: AssetType
+    asset_type: AssetType | None = None  # 标的解析不到时为 None
     adjust: AdjustType
-    bars: list[DailyBar]
+    bars: list[DailyBar] = []
+    # 请求的标的取不到日线时显式给原因（不再靠「返回条数变少」表达）：
+    #   asset_type_not_supported — 该资产类型不支持日线（港股/美股/全球指数）
+    #   symbol_not_found        — 代码解析不到
+    #   data_unavailable        — 标的适用，但请求区间内没有数据（无交易日或上游无数据）
+    unsupported_reason: UnsupportedReason | None = None
 
 
 class DailyResponse(BaseModel):
-    total: int
+    total: int  # 返回的 item 数：每个请求的 code 至少一条 item
     items: list[DailyItem]
 
 
@@ -70,14 +75,16 @@ class PercentileData(BaseModel):
 class PercentileItem(BaseModel):
     symbol: str
     name: str
-    asset_type: AssetType
+    asset_type: AssetType | None = None  # 标的解析不到时为 None
     as_of: str | None = None  # 序列最末日 YYYYMMDD（与 index_valuation_percentile.as_of 对齐）；bars 为空时 None
     stale_days: int | None = None  # as_of 与调用日的自然日差；>3 通常意味着该标的数据陈旧/缺失
-    percentiles: list[PercentileData]
+    percentiles: list[PercentileData] = []
+    # 挤不到数据时显式给原因（asset_type_not_supported / symbol_not_found / data_unavailable）
+    unsupported_reason: UnsupportedReason | None = None
 
 
 class PercentileResponse(BaseModel):
-    total: int
+    total: int  # 返回的 item 数：每个请求的 code 至少一条 item
     items: list[PercentileItem]
 
 
@@ -124,14 +131,16 @@ class TechnicalData(BaseModel):
 class TechnicalItem(BaseModel):
     symbol: str
     name: str
-    asset_type: AssetType
+    asset_type: AssetType | None = None  # 标的解析不到时为 None
     as_of: str | None = None  # 序列最末日 YYYYMMDD（与 index_valuation_percentile.as_of 对齐）；bars 为空时 None
     stale_days: int | None = None  # as_of 与调用日的自然日差；>3 通常意味着该标的数据陈旧/缺失
-    technical: TechnicalData
+    technical: TechnicalData | None = None  # 取不到数据时为 None，原因见 unsupported_reason
+    # 挤不到数据时显式给原因（asset_type_not_supported / symbol_not_found / data_unavailable）
+    unsupported_reason: UnsupportedReason | None = None
 
 
 class TechnicalResponse(BaseModel):
-    total: int
+    total: int  # 返回的 item 数：每个请求的 code 至少一条 item
     items: list[TechnicalItem]
 
 

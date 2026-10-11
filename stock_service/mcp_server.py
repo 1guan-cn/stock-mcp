@@ -40,6 +40,16 @@ def get_daily_quote(
 ) -> str:
     """[tushare] 查询股票/基金/指数日线行情数据。
 
+    **覆盖范围**：仅 A 股个股 / ETF 基金 / A 股指数。港股、美股、全球指数不支持日线
+    （只有 get_realtime_quote 支持），会返回 `unsupported_reason=asset_type_not_supported`。
+
+    **失败语义**：指定 `code` 时返回体里**至少有一条 item**，取不到数据不静默返回空数组，
+    而是 item 内带 `unsupported_reason`：
+    - `asset_type_not_supported`：该资产类型不支持日线（港股/美股/全球指数）
+    - `symbol_not_found`：代码解析不到
+    - `data_unavailable`：标的适用，但请求区间内没有数据（区间内无交易日或上游无数据）
+    `total` 反映返回的 item 数。
+
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）、"399001.SZ"（深证成指）、"399006.SZ"（创业板指）
         start_date: 开始日期，YYYYMMDD 格式，如 "20240101"
@@ -160,7 +170,12 @@ def get_technical(
 
     顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），与 `index_valuation_percentile.as_of` 对齐，
     供 consumer 检测 stale；`stale_days` 是 as_of 与调用日的自然日差，明显大于 0
-    （如 > 3）说明该标的数据陈旧/缺失，技术面不可判。当上游序列为空时 as_of 为 null。
+    （如 > 3）说明该标的数据陈旧/缺失，技术面不可判。
+
+    **失败语义**：恒返回一条 item，取不到数据时 `technical` 为 null 且 item 内带
+    `unsupported_reason`（`asset_type_not_supported` 港股/美股/全球指数无日线 /
+    `symbol_not_found` / `data_unavailable`），不再靠「total 变小」表达失败。
+    日线只覆盖 A 股/ETF/指数。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）
@@ -178,8 +193,11 @@ def get_technical_batch(
     """[tushare] 批量查询多个股票/基金/指数的技术指标。
 
     一次性获取多个标的的 MA、量能、涨跌幅、高低点等技术指标，减少多次调用开销。
-    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD），bars 为空时为 null；
-    `stale_days` 是 as_of 与调用日的自然日差，明显大于 0（如 > 3）说明数据陈旧/缺失。
+    每个 item 顶层 `as_of` 字段暴露序列最末日（YYYYMMDD）；`stale_days` 是 as_of 与
+    调用日的自然日差，明显大于 0（如 > 3）说明数据陈旧/缺失。
+
+    **失败语义**：每个请求的 code **至少返回一条 item**（`total` = 返回 item 数），
+    解析不到或取不到数据的 item 带 `unsupported_reason`，不会静默少一条。
 
     Args:
         codes: 证券代码列表，如 ["000001.SH", "399001.SZ", "399006.SZ"]
@@ -206,6 +224,9 @@ def get_percentile_batch(
     每个 item 的 `as_of` 是序列最末日（YYYYMMDD），`stale_days` 是它与调用日的
     自然日差；`stale_days` 明显大于 0（如 > 3）说明该标的数据陈旧，分位不可用。
 
+    **失败语义**：每个请求的 code **至少返回一条 item**（`total` = 返回 item 数），
+    解析不到或取不到数据的 item 带 `unsupported_reason`，不会静默少一条。
+
     Args:
         codes: 证券代码列表，如 ["510300.SH", "510500.SH", "512010.SH"]
     """
@@ -230,6 +251,10 @@ def get_percentile(
 
     `as_of` 是序列最末日（YYYYMMDD），`stale_days` 是它与调用日的自然日差；
     `stale_days` 明显大于 0（如 > 3）说明该标的数据陈旧，分位不可用。
+
+    **失败语义**：恒返回一条 item，取不到数据时 `percentiles` 为空且 item 内带
+    `unsupported_reason`（`asset_type_not_supported` / `symbol_not_found` /
+    `data_unavailable`）。日线只覆盖 A 股/ETF/指数。
 
     Args:
         code: 证券代码（带交易所后缀），如 "000001.SZ"（平安银行）、"510300.SH"（沪深300ETF）、"000001.SH"（上证指数）
