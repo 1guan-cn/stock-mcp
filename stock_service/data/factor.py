@@ -166,17 +166,16 @@ def get_fund_flow(symbol: str) -> list[dict]:
 # ── ETF 申购赎回 ──
 
 def get_etf_fund_flow(symbol: str) -> list[dict]:
-    """获取ETF申购赎回份额变动数据（增量缓存）。仅 ETF/基金有效。
+    """刷新最近 30 天的 ETF 份额变动，另取 15 天作为差分基准。
 
-    多取 15 天用于差分计算首日份额变动（adapter 靠相邻行差分得到份额变动）。
+    不能按派生结果的日期跨度只补尾部：adapter 会将每批首行用作基准，且
+    NAV 可能迟到。重算有限窗口才能同时保留新增首日、回补旧缺行和更新 null。
     """
-    return fetch_with_cache(
-        symbol, DataType.ETF_SUBSCRIPTION, n_days_ago_str(45), today_str(),
-        fetch_fn=ts.get_etf_fund_flow,
-        save_fn=factor_store.save_etf_subscription,
-        query_fn=lambda s, a, b: factor_store.get_cached_etf_subscription(
-            s, n_days_ago_str(30), today_str()
-        ),
+    today = today_str()
+    rows = ts.get_etf_fund_flow(symbol, n_days_ago_str(45), today)
+    factor_store.save_etf_subscription(symbol, rows)
+    return factor_store.get_cached_etf_subscription(
+        symbol, n_days_ago_str(30), today,
     )
 
 
