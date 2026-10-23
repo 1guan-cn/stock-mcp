@@ -411,11 +411,11 @@ def index_valuation_percentile(
     - as_of: 数据日期
     - unsupported_reason: 数据缺失原因枚举（仅在数据缺失时填）
 
-    覆盖范围（受 tushare `index_dailybasic` 当前账户套餐限制）：
+    覆盖范围（由 Tushare `index_dailybasic` 的实际数据覆盖决定）：
 
-    - ✅ **主流宽基指数**（000300 沪深300 / 000905 中证500 / 000016 上证50 / 399006 创业板指）返 PE/PB
-    - ✅ 跟踪上述宽基的 **ETF**（如 510300 / 510500 / 510050 / 159915 / 159919），通过 `_registry` 映射回跟踪指数
-    - ❌ **中证主题/行业指数**（93xxxx / H3xxxx / 部分 000xxx 主题，如中证医药、中证白酒、中证证券、中证军工等）当前 tushare 套餐返空 → `unsupported_reason=index_data_unavailable`
+    - ✅ **已验证宽基指数**，包括沪深300、中证500、上证50、创业板指、中证1000（000852.SH）、科创50（000688.SH）
+    - ✅ 已登记的对应 **ETF**，如 510300 / 510500 / 510050 / 159915 / 159919 / 512100 / 159845 / 588000，通过 `_registry` 映射回实际跟踪指数
+    - **主题/行业指数**的跟踪映射不保证估值可用；没有可用历史时返回 `unsupported_reason=index_data_unavailable`。该原因不单独证明套餐或权限不足
     - ❌ **未在 `_registry` 内的 ETF** → `unsupported_reason=index_not_in_registry`
     - ❌ 海外指数 / 非 A 股标的 → 在 `_registry` 显式标 None
     - ❌ symbol 解析不到 → `unsupported_reason=symbol_not_found`
