@@ -88,6 +88,26 @@ class PercentileResponse(BaseModel):
     items: list[PercentileItem]
 
 
+class PercentileHistoryPoint(BaseModel):
+    date: str  # 采样日 YYYYMMDD
+    price_percentile: float | None = None  # 价格分位（0-100）
+    pe_ttm_percentile: float | None = None  # PE-TTM 分位；ETF/指数取不到时为 None
+    pb_percentile: float | None = None  # PB 分位；ETF/指数取不到时为 None
+
+
+class PercentileHistoryItem(BaseModel):
+    symbol: str
+    name: str
+    asset_type: AssetType | None = None  # 标的解析不到时为 None
+    window: str  # 6m / 1y / 2y / 3y
+    freq: str  # daily / weekly
+    as_of: str | None = None  # series 最末日（最新交易日）
+    stale_days: int | None = None  # as_of 与调用日的自然日差
+    series: list[PercentileHistoryPoint] = []
+    # 取不到数据时显式给原因（asset_type_not_supported / symbol_not_found / data_unavailable）
+    unsupported_reason: UnsupportedReason | None = None
+
+
 class HighLowPoint(BaseModel):
     price: float
     date: str

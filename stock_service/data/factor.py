@@ -102,10 +102,14 @@ def get_stock_valuation(symbol: str) -> ValuationData:
     )
 
 
-def get_index_valuation_history(index_symbol: str) -> list[dict]:
-    """获取指数3年估值历史（用于计算PE/PB百分位）。"""
+def get_index_valuation_history(index_symbol: str, days: int = 1095) -> list[dict]:
+    """获取指数估值历史（PE/PB），默认回溯 3 年。
+
+    调用方若需要更早的分位采样点（如 3y 窗口 + 若干周），传更大的 `days`；
+    缓存按实际覆盖区间增量补拉，不会重复拉已覆盖部分。
+    """
     today = today_str()
-    start_date = n_days_ago_str(1095)
+    start_date = n_days_ago_str(days)
 
     return fetch_with_cache(
         index_symbol, DataType.INDEX_VALUATION, start_date, today,

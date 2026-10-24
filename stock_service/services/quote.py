@@ -1,8 +1,10 @@
 """Service 层 — 日线行情、复权、技术指标、百分位。纯计算 + 数据组合。"""
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
+from stock_service.data import factor as factor_data
 from stock_service.data import listing as listing_data
 from stock_service.data import quote as quote_data
 from stock_service.services._utils import CST, calc_percentile, stale_days
@@ -15,6 +17,8 @@ from stock_service.models.quote import (
     DailyResponse,
     HighLowPoint,
     PercentileData,
+    PercentileHistoryItem,
+    PercentileHistoryPoint,
     PercentileItem,
     PercentileResponse,
     RealtimeQuote,
@@ -27,6 +31,8 @@ from stock_service.models.quote import (
 from stock_service.data.adapters.akshare import REVERSE_REPO_CATALOG
 
 _MAX_WORKERS = 8
+
+logger = logging.getLogger(__name__)
 
 
 # ── 复权 ──
@@ -184,6 +190,43 @@ _PERCENTILE_PERIODS = [
     ("3y", 1095),
 ]
 
+_PERCENTILE_WINDOW_DAYS = dict(_PERCENTILE_PERIODS)
+_PERCENTILE_FREQ_STEPS = {"daily": 1, "weekly": 5}
+_MAX_HISTORY_PERIODS = 260
+
+
+def _calc_window_percentiles(
+    period_bars: list[DailyBar],
+    current_price: float,
+    current_pe_ttm: float | None,
+    current_pb: float | None,
+) -> tuple[float | None, float | None, float | None]:
+    """按窗口内的 bars 计算价格 / PE-TTM / PB 分位（0-100）。
+
+    价格分位需要 >=2 个收盘价；PE/PB 分位额外要求当前值 >0（负值无意义）。
+    窗口不足或当前值缺失时对应分位为 None。get_percentile 与
+    get_percentile_history 共用此函数，保证两者口径一致。
+    """
+    closes = [b.close for b in period_bars]
+    if len(closes) < 2:
+        return None, None, None
+
+    price_pct = calc_percentile(closes, current_price)
+
+    pe_ttm_pct = None
+    if current_pe_ttm is not None and current_pe_ttm > 0:
+        pe_ttms = [b.pe_ttm for b in period_bars if b.pe_ttm is not None and b.pe_ttm > 0]
+        if len(pe_ttms) >= 2:
+            pe_ttm_pct = calc_percentile(pe_ttms, current_pe_ttm)
+
+    pb_pct = None
+    if current_pb is not None and current_pb > 0:
+        pbs = [b.pb for b in period_bars if b.pb is not None and b.pb > 0]
+        if len(pbs) >= 2:
+            pb_pct = calc_percentile(pbs, current_pb)
+
+    return price_pct, pe_ttm_pct, pb_pct
+
 
 def _get_single_percentile(
     symbol: str,
@@ -240,18 +283,9 @@ def _get_single_percentile(
             )
             continue
 
-        price_pct = calc_percentile(closes, current_price)
-
-        pe_ttm_pct = None
-        pb_pct = None
-        if is_stock:
-            pe_ttms = [b.pe_ttm for b in period_bars if b.pe_ttm is not None and b.pe_ttm > 0]
-            if len(pe_ttms) >= 2 and current_pe_ttm is not None and current_pe_ttm > 0:
-                pe_ttm_pct = calc_percentile(pe_ttms, current_pe_ttm)
-
-            pbs = [b.pb for b in period_bars if b.pb is not None and b.pb > 0]
-            if len(pbs) >= 2 and current_pb is not None and current_pb > 0:
-                pb_pct = calc_percentile(pbs, current_pb)
+        price_pct, pe_ttm_pct, pb_pct = _calc_window_percentiles(
+            period_bars, current_price, current_pe_ttm, current_pb,
+        )
 
         percentiles.append(
             PercentileData(
@@ -319,6 +353,173 @@ def get_percentile_batch(
         items = [f.result() for f in futures]
 
     return PercentileResponse(total=len(items), items=items)
+
+
+# ── 历史分位 ──
+
+def _calc_index_valuation_percentiles(
+    rows: list[dict], start_date: str, end_date: str
+) -> tuple[float | None, float | None]:
+    """从指数估值序列里算 PE-TTM / PB 分位。
+
+    当前值取 `<= end_date` 的最近一条（采样日可能没有估值行），样本为
+    `[start_date, end_date]` 内的所有行，要求当前值 >0 且样本 >=2。
+    """
+    window_rows = [r for r in rows if start_date <= r["date"] <= end_date]
+    if not window_rows:
+        return None, None
+
+    current = window_rows[-1]
+    pe_ttm = current.get("pe_ttm")
+    pb = current.get("pb")
+
+    pe_ttms = [r["pe_ttm"] for r in window_rows if r.get("pe_ttm") and r["pe_ttm"] > 0]
+    pe_pct = (
+        calc_percentile(pe_ttms, pe_ttm)
+        if len(pe_ttms) >= 2 and pe_ttm and pe_ttm > 0
+        else None
+    )
+
+    pbs = [r["pb"] for r in window_rows if r.get("pb") and r["pb"] > 0]
+    pb_pct = (
+        calc_percentile(pbs, pb)
+        if len(pbs) >= 2 and pb and pb > 0
+        else None
+    )
+
+    return pe_pct, pb_pct
+
+
+def _validate_history_args(window: str, freq: str, periods: int) -> None:
+    if window not in _PERCENTILE_WINDOW_DAYS:
+        raise ValueError(
+            f"window 只支持 {list(_PERCENTILE_WINDOW_DAYS)}，收到 {window!r}"
+        )
+    if freq not in _PERCENTILE_FREQ_STEPS:
+        raise ValueError(f"freq 只支持 {list(_PERCENTILE_FREQ_STEPS)}，收到 {freq!r}")
+    if not 1 <= periods <= _MAX_HISTORY_PERIODS:
+        raise ValueError(f"periods 需在 1..{_MAX_HISTORY_PERIODS} 之间，收到 {periods}")
+
+
+def _get_single_percentile_history(
+    symbol: str,
+    name: str,
+    asset_type: AssetType,
+    unsupported_reason: UnsupportedReason | None,
+    window: str,
+    freq: str,
+    periods: int,
+) -> PercentileHistoryItem:
+    if asset_type is None or unsupported_reason is not None:
+        return PercentileHistoryItem(
+            symbol=symbol, name=name, asset_type=asset_type,
+            window=window, freq=freq, series=[],
+            unsupported_reason=unsupported_reason,
+        )
+
+    window_days = _PERCENTILE_WINDOW_DAYS[window]
+    step = _PERCENTILE_FREQ_STEPS[freq]
+    # 采样跨度：weekly 每点约 7 个自然日；daily 每点 1 个交易日，含周末按 2 天估。
+    # 再 +30 天缓冲覆盖春节等长假，保证最早采样点的窗口也完整。
+    span_days = periods * (7 if freq == "weekly" else 2)
+    lookback_days = window_days + span_days + 30
+    today = datetime.now(CST).strftime("%Y%m%d")
+    start_date = (datetime.now(CST) - timedelta(days=lookback_days)).strftime("%Y%m%d")
+
+    is_stock = asset_type == AssetType.STOCK
+    detail = DetailLevel.ALL if is_stock else DetailLevel.SIMPLE
+
+    daily_item = _get_single_daily(
+        symbol, name, asset_type, start_date, today, AdjustType.QFQ, detail,
+    )
+    bars = daily_item.bars
+    if not bars:
+        return PercentileHistoryItem(
+            symbol=symbol, name=name, asset_type=asset_type,
+            window=window, freq=freq, series=[],
+            unsupported_reason=UnsupportedReason.DATA_UNAVAILABLE,
+        )
+
+    # ETF/指数的 PE/PB 走 index_dailybasic（个股走日线自带的 daily_basic 字段）。
+    # 映射不到跟踪指数或上游套餐不覆盖时保持空列表，PE/PB 分位为 None，不报错。
+    index_rows: list[dict] = []
+    if not is_stock:
+        index_symbol = (
+            symbol if asset_type == AssetType.INDEX
+            else factor_data.get_index_for_etf(symbol)
+        )
+        if index_symbol:
+            try:
+                index_rows = factor_data.get_index_valuation_history(
+                    index_symbol, days=lookback_days,
+                )
+            except Exception as e:
+                logger.warning(
+                    "get_percentile_history(%s) index valuation failed: %s", symbol, e
+                )
+                index_rows = []
+
+    last_idx = len(bars) - 1
+    sample_idxs = list(range(last_idx, -1, -step))[:periods]
+    sample_idxs.reverse()
+
+    points: list[PercentileHistoryPoint] = []
+    for idx in sample_idxs:
+        bar = bars[idx]
+        # 最新采样点用 today 作窗口基准日，与 get_percentile 的 cutoff 完全一致；
+        # 历史采样点用采样日，即「该日往前 window」的滚动分位。
+        anchor = today if idx == last_idx else bar.date
+        cutoff = (
+            datetime.strptime(anchor, "%Y%m%d") - timedelta(days=window_days)
+        ).strftime("%Y%m%d")
+        period_bars = [b for b in bars if cutoff <= b.date <= bar.date]
+
+        if is_stock:
+            price_pct, pe_pct, pb_pct = _calc_window_percentiles(
+                period_bars, bar.close, bar.pe_ttm, bar.pb,
+            )
+        else:
+            price_pct = (
+                calc_percentile([b.close for b in period_bars], bar.close)
+                if len(period_bars) >= 2
+                else None
+            )
+            pe_pct, pb_pct = _calc_index_valuation_percentiles(
+                index_rows, cutoff, bar.date,
+            )
+
+        points.append(
+            PercentileHistoryPoint(
+                date=bar.date,
+                price_percentile=price_pct,
+                pe_ttm_percentile=pe_pct,
+                pb_percentile=pb_pct,
+            )
+        )
+
+    as_of = bars[-1].date
+    return PercentileHistoryItem(
+        symbol=symbol, name=name, asset_type=asset_type,
+        window=window, freq=freq,
+        as_of=as_of, stale_days=stale_days(as_of),
+        series=points,
+    )
+
+
+def get_percentile_history(
+    code: str,
+    window: str = "1y",
+    freq: str = "weekly",
+    periods: int = 8,
+) -> PercentileHistoryItem:
+    """单标的的历史分位序列（滚动窗口）。"""
+    _validate_history_args(window, freq, periods)
+    symbol, name, asset_type, reason = _resolve_or_placeholder([code])[0]
+    return _get_single_percentile_history(
+        symbol, name,
+        AssetType(asset_type) if asset_type else None,
+        reason, window, freq, periods,
+    )
 
 
 # ── 技术指标 ──

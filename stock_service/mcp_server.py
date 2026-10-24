@@ -264,6 +264,52 @@ def get_percentile(
 
 
 @mcp.tool()
+def get_percentile_history(
+    code: str,
+    window: str = "1y",
+    freq: str = "weekly",
+    periods: int = 8,
+) -> str:
+    """[tushare] 查询单只标的的历史分位序列（滚动窗口，用于「读数是否同侧」等隔期确认）。
+
+    返回最近 `periods` 个采样点的价格 / PE-TTM / PB 分位（0-100），不是只有当前时点。
+    每个采样点都是「该日往前 `window`」的滚动窗口分位：
+
+    - `series[-1]` 恒为最新交易日，且与 `get_percentile(code)` 同窗口的值一致
+      （共用同一分位算法；最新点的窗口基准日为调用日，与 `get_percentile` 完全对齐）。
+    - `freq="weekly"`：以最新交易日为锚，**每 5 个交易日**取一个采样点
+      （按该标的的日线序列计，停牌日不占位），因此 `series[-2]` 恰为
+      5 个交易日前（不是自然周的「上周最后一个交易日」，避免周中调用时
+      两点只差 1-3 个交易日）。
+    - `freq="daily"`：每个交易日一个采样点，`periods` 即最近 N 个交易日。
+
+    结果按日期升序。`window` 只接受 6m / 1y / 2y / 3y。
+
+    **PE/PB 分位的数据源**：
+    - 股票：日线自带的 daily_basic 字段（与 `get_percentile` 同源）
+    - ETF / 指数：`index_dailybasic`（ETF 先经 `_registry` 映射到跟踪指数）。
+      宽基 ETF/指数可拿到 3 年 PB 历史分位；主题指数套餐不支持、或 ETF 不在映射表时
+      对应分位为 null，不报错（`price_percentile` 仍照给）。
+
+    `as_of` 是 `series` 最末日（最新交易日），`stale_days` 是它与调用日的自然日差。
+
+    **失败语义**：恒返回一个对象，取不到日线时 `series` 为空且带
+    `unsupported_reason`（`asset_type_not_supported` 港股/美股/全球指数 /
+    `symbol_not_found` / `data_unavailable`），不静默返回空数组。
+
+    Args:
+        code: 证券代码（带交易所后缀），如 "600366.SH"（宁波韵升）、"510300.SH"（沪深300ETF）
+        window: 分位窗口 - "6m" / "1y"(默认) / "2y" / "3y"
+        freq: 采样粒度 - "weekly"(默认，每 5 个交易日) / "daily"(每交易日)
+        periods: 返回最近 N 个采样点，默认 8；需在 1..260 之间
+    """
+    result = quote_service.get_percentile_history(
+        code, window=window, freq=freq, periods=periods,
+    )
+    return _to_json(result)
+
+
+@mcp.tool()
 def get_factor(
     code: str,
     date: str | None = None,
